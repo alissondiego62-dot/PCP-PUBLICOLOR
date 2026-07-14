@@ -1,0 +1,696 @@
+/* Publicolor 2.0 — revisão responsiva geral (desktop, tablet e celular) */
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.content,
+.management-view,
+.orders-management-view,
+.responsive-table,
+.board,
+.sector,
+.sector-body,
+.lane,
+.order,
+.table-row,
+.table-row > * {
+  min-width: 0;
+}
+
+/* Filtros do Kanban: inclui responsável sem comprimir os demais campos. */
+.filters-panel {
+  grid-template-columns: repeat(5, minmax(132px, 1fr)) auto;
+  align-items: end;
+}
+
+/* Responsável exibido nos cartões do Kanban. */
+.sector {
+  flex: 0 0 clamp(286px, 24vw, 326px);
+  width: clamp(286px, 24vw, 326px);
+}
+
+.sector-body {
+  padding: 0 10px 10px;
+}
+
+.order,
+.order h3,
+.order-service,
+.order-responsible,
+.order-responsible > div {
+  min-width: 0;
+}
+
+.order h3,
+.order-service {
+  overflow-wrap: anywhere;
+}
+
+.order-responsible {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 8px 0 2px;
+  padding: 8px 9px;
+  border: 1px solid #e6dfea;
+  border-radius: 9px;
+  background: #faf7fb;
+}
+
+.order-responsible > span,
+.order-responsible-cell > i {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e9dfee;
+  color: #5f2f72;
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.order-responsible > div {
+  display: grid;
+  gap: 2px;
+}
+
+.order-responsible small {
+  color: #8a7d8f;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .65px;
+}
+
+.order-responsible b {
+  overflow: hidden;
+  color: #49344f;
+  font-size: 9px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Barra de pesquisa e filtro da tela Todos os pedidos. */
+.orders-view-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(210px, 270px) auto auto;
+  gap: 10px;
+  height: auto;
+  min-height: 62px;
+}
+
+.orders-view-toolbar .orders-search-field {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.orders-view-toolbar .orders-responsible-filter {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  height: 42px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfc;
+  color: #796d7d;
+}
+
+.orders-responsible-filter > span {
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.orders-responsible-filter select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #3f3044;
+  font-size: 10px;
+}
+
+.orders-clear-filter {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid #ddd3e1;
+  border-radius: 8px;
+  background: #f7f2f9;
+  color: #633b71;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.orders-view-toolbar > span {
+  margin-left: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Tabela de pedidos: colunas fluidas e proteção contra sobreposição. */
+.grouped-orders-table .table-head,
+.grouped-orders-table .table-row {
+  grid-template-columns:
+    minmax(128px, .8fr)
+    minmax(250px, 2fr)
+    minmax(118px, .82fr)
+    minmax(150px, 1fr)
+    minmax(118px, .82fr)
+    minmax(98px, .65fr);
+  gap: 14px;
+  padding-left: 15px;
+  padding-right: 15px;
+}
+
+.grouped-orders-table .table-row {
+  min-height: 78px;
+}
+
+.grouped-orders-table .table-row > * {
+  min-width: 0;
+}
+
+.order-parent-op {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px 7px;
+}
+
+.order-parent-op > span:not(.order-family-toggle-placeholder) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-parent-op small {
+  grid-column: 2;
+  justify-self: start;
+  margin: 0;
+}
+
+.order-child-op {
+  overflow-wrap: anywhere;
+}
+
+.order-client-cell {
+  min-width: 0;
+}
+
+.order-client-cell strong,
+.order-client-cell small {
+  overflow-wrap: anywhere;
+}
+
+.order-client-cell small {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.order-sector-cell,
+.order-delivery-cell {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.order-responsible-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #4f3b55 !important;
+}
+
+.order-responsible-cell > b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 9px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grouped-orders-table .table-row > button {
+  width: 100%;
+  min-width: 0;
+  padding: 0 8px;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+/* Tablet horizontal e notebooks menores. */
+@media (max-width: 1280px) {
+  .filters-panel {
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+  }
+
+  .grouped-orders-table .table-head,
+  .grouped-orders-table .table-row {
+    grid-template-columns:
+      minmax(120px, .75fr)
+      minmax(220px, 1.7fr)
+      minmax(108px, .75fr)
+      minmax(135px, .95fr)
+      minmax(110px, .75fr)
+      94px;
+    gap: 10px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .content {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .orders-view-toolbar {
+    grid-template-columns: minmax(230px, 1fr) minmax(200px, 250px) auto;
+  }
+
+  .orders-view-toolbar > span {
+    grid-column: 1 / -1;
+    width: 100%;
+    text-align: left;
+  }
+
+  .grouped-orders-table {
+    display: grid;
+    gap: 12px;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .grouped-orders-table .table-head {
+    display: none;
+  }
+
+  .grouped-orders-table .order-family {
+    border: 0;
+  }
+
+  .grouped-orders-table .order-parent-row,
+  .grouped-orders-table .order-child-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, .62fr);
+    grid-template-areas:
+      "client client"
+      "op action"
+      "sector responsible"
+      "delivery delivery";
+    gap: 10px 16px;
+    min-height: 0;
+    padding: 16px;
+    border: 1px solid var(--publicolor-line, var(--line));
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 7px 20px rgba(48, 23, 53, .055);
+  }
+
+  .grouped-orders-table .order-parent-row {
+    border-left: 4px solid #735084;
+  }
+
+  .grouped-orders-table .order-child-row,
+  .grouped-orders-table .order-child-row:first-child {
+    padding: 15px;
+    border: 1px solid var(--publicolor-line, var(--line)) !important;
+    border-left: 4px solid #d6c4df !important;
+  }
+
+  .grouped-orders-table .order-parent-op,
+  .grouped-orders-table .order-child-op {
+    grid-area: op;
+  }
+
+  .grouped-orders-table .order-client-cell {
+    grid-area: client;
+  }
+
+  .grouped-orders-table .order-sector-cell {
+    grid-area: sector;
+  }
+
+  .grouped-orders-table .order-responsible-cell {
+    grid-area: responsible;
+    flex-wrap: wrap;
+  }
+
+  .grouped-orders-table .order-responsible-cell::before {
+    content: attr(data-label);
+    flex: 0 0 100%;
+    color: #8b7f91;
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .65px;
+    text-transform: uppercase;
+  }
+
+  .grouped-orders-table .order-delivery-cell {
+    grid-area: delivery;
+  }
+
+  .grouped-orders-table .order-parent-row > button,
+  .grouped-orders-table .order-child-row > button {
+    grid-area: action;
+    align-self: center;
+    min-height: 42px;
+  }
+
+  .order-sector-cell::before,
+  .order-delivery-cell::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: #8b7f91;
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .65px;
+    text-transform: uppercase;
+  }
+
+  .order-responsible-cell::after {
+    content: "";
+  }
+
+  .order-family-children {
+    display: grid;
+    gap: 9px;
+    padding: 10px 0 0 14px;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .order-family-children::before {
+    position: static;
+    padding: 0 4px;
+  }
+}
+
+/* Tablet em orientação vertical. */
+@media (max-width: 820px) {
+  .orders-view-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(190px, .7fr);
+  }
+
+  .orders-clear-filter {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .sector {
+    flex-basis: 286px;
+    width: 286px;
+  }
+
+  .modal {
+    width: min(760px, 96vw) !important;
+  }
+
+  .detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Celular. */
+@media (max-width: 700px) {
+  .content {
+    padding-left: 13px !important;
+    padding-right: 13px !important;
+  }
+
+  .content > header {
+    margin-left: -13px;
+    margin-right: -13px;
+    padding-left: 13px;
+    padding-right: 13px;
+  }
+
+  .filters-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .board {
+    width: 100%;
+  }
+
+  .sector {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .sector-body {
+    padding: 0 8px 8px;
+  }
+
+  .order {
+    grid-template-columns: 92px minmax(0, 1fr);
+    column-gap: 10px;
+  }
+
+  .order-thumbnail,
+  .order-thumbnail img {
+    width: 92px;
+    height: 92px;
+  }
+
+  .order-top,
+  .order h3,
+  .order-service,
+  .order-responsible,
+  .due {
+    grid-column: 2;
+  }
+
+  .order-responsible {
+    margin-top: 6px;
+    padding: 6px 7px;
+  }
+
+  .order-responsible > span {
+    width: 25px;
+    height: 25px;
+    flex-basis: 25px;
+  }
+
+  .order-responsible b {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .workflow-actions,
+  .card-actions {
+    grid-column: 1 / -1;
+  }
+
+  .orders-view-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .orders-view-toolbar .orders-search-field,
+  .orders-view-toolbar .orders-responsible-filter,
+  .orders-clear-filter,
+  .orders-view-toolbar > span {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  .orders-view-toolbar .orders-responsible-filter {
+    height: 46px;
+  }
+
+  .orders-view-toolbar > span {
+    text-align: center;
+    white-space: normal;
+  }
+
+  .grouped-orders-table .order-parent-row,
+  .grouped-orders-table .order-child-row {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "client"
+      "op"
+      "sector"
+      "responsible"
+      "delivery"
+      "action";
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .grouped-orders-table .order-parent-row > div,
+  .grouped-orders-table .order-child-row > div,
+  .grouped-orders-table .order-parent-row > b,
+  .grouped-orders-table .order-child-row > b,
+  .grouped-orders-table .order-parent-row > span,
+  .grouped-orders-table .order-child-row > span,
+  .grouped-orders-table .order-parent-row > button,
+  .grouped-orders-table .order-child-row > button {
+    grid-column: 1 !important;
+    text-align: left !important;
+  }
+
+  .grouped-orders-table .order-parent-row > button,
+  .grouped-orders-table .order-child-row > button {
+    width: 100%;
+    min-height: 44px;
+    text-align: center !important;
+  }
+
+  .order-sector-cell,
+  .order-delivery-cell {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .order-sector-cell::before,
+  .order-delivery-cell::before {
+    margin: 0;
+  }
+
+  .order-responsible-cell::before {
+    content: attr(data-label);
+    width: 80px;
+    flex: 0 0 80px;
+    color: #8b7f91;
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .65px;
+    text-transform: uppercase;
+  }
+
+  .order-family-children {
+    padding-left: 9px;
+  }
+
+  .overlay {
+    align-items: end;
+    padding: 0;
+  }
+
+  .modal {
+    width: 100% !important;
+    max-width: none !important;
+    max-height: 96dvh !important;
+    padding: 20px 15px calc(20px + env(safe-area-inset-bottom)) !important;
+    border-radius: 18px 18px 0 0 !important;
+    overflow-x: hidden;
+  }
+
+  .modal .close {
+    position: sticky;
+    top: 0;
+    float: right;
+    z-index: 4;
+    background: #f5f1f6;
+  }
+
+  .v3-order-header {
+    padding-right: 0;
+  }
+
+  .v3-order-image {
+    height: 150px;
+  }
+
+  .v3-order-header h2 {
+    font-size: 20px !important;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-tabs {
+    width: 100%;
+    padding-bottom: 3px;
+  }
+
+  .form-grid,
+  .editable-order-form .form-grid,
+  .schedule-form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .actions,
+  .v3-production-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .actions button,
+  .v3-production-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 430px) {
+  .content h1 {
+    max-width: 190px;
+  }
+
+  .order {
+    grid-template-columns: 78px minmax(0, 1fr);
+    padding: 9px;
+  }
+
+  .order-thumbnail,
+  .order-thumbnail img {
+    width: 78px;
+    height: 78px;
+  }
+
+  .order-top {
+    padding-right: 28px;
+  }
+
+  .order-responsible {
+    grid-column: 1 / -1;
+  }
+
+  .due {
+    grid-column: 1 / -1;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-strip,
+  .v3-kpi-grid,
+  .client-profile-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

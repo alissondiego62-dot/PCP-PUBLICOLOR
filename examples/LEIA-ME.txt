@@ -1,0 +1,13 @@
+ALTERAÇÃO — BOTÕES DA TELA CONCLUÍDOS
+
+Substitua na pasta app do projeto:
+- page.tsx
+- pcp-v2.css
+
+Novo modelo:
+- Ver Histórico: botão cinza com ícone de relógio.
+- Reabrir Produção: botão roxo Publicolor com ícone de retorno.
+- Botões empilhados, com mesma largura, hover, foco e responsividade.
+
+Depois execute:
+pnpm dev

@@ -1,0 +1,24 @@
+--- componente atual de detalhes do cliente
++++ componente atual com Materiais
+@@
++import { ClientDetailTabs } from "./clients/ClientDetailTabs";
++import { ClientMaterialsWorkspace } from "./clients/ClientMaterialsWorkspace";
+@@
++const [activeClientSection, setActiveClientSection] = useState("overview");
++const [clientMaterialCount, setClientMaterialCount] = useState(0);
+@@ depois de client-detail-header
++<ClientDetailTabs
++  activeSection={activeClientSection}
++  onChange={setActiveClientSection}
++  materialCount={clientMaterialCount}
++  orderCount={clientOrders.length}
++/>
+@@
++{activeClientSection === "materials" && (
++  <ClientMaterialsWorkspace
++    client={selectedClient}
++    supabase={supabase}
++    canEdit={canManageClients}
++    onCountChange={setClientMaterialCount}
++  />
++)}
