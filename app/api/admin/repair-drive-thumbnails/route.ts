@@ -8,6 +8,7 @@ import {
 import {
   buildDriveThumbnailPath,
   isPdfImportedPageThumbnail,
+  isZipImportedThumbnail,
   isPngThumbnailCandidate,
 } from "@/lib/order-thumbnail";
 
@@ -75,8 +76,12 @@ function chooseThumbnail(files: OrderFileRow[]) {
   const pngFiles = files.filter((file) => Boolean(file.drive_file_id) && isPng(file));
   if (pngFiles.length === 0) return null;
 
-  // Regra principal: o PNG criado a partir da página importada do PDF da OS
-  // é sempre a miniatura oficial do pedido ou subpedido.
+  // A importação manual em ZIP é uma substituição explícita e, por isso,
+  // tem prioridade sobre páginas antigas importadas do PDF.
+  const zipThumbnails = pngFiles.filter(isZipImportedThumbnail);
+  if (zipThumbnails.length > 0) return newest(zipThumbnails);
+
+  // Na ausência de ZIP, a página importada do PDF continua sendo a fonte oficial.
   const importedPdfPages = pngFiles.filter(isPdfImportedPageThumbnail);
   if (importedPdfPages.length > 0) return newest(importedPdfPages);
 

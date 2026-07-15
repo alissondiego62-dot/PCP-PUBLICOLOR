@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, MouseEvent } from "react";
 import { supabase } from "@/lib/supabase";
+import { ThumbnailZipImportPanel } from "@/components/ThumbnailZipImportPanel";
 
 type PlatformSettings = {
   vercel_project_id: string;
@@ -424,7 +425,10 @@ export function PlatformAdministrationSettings() {
       <span>Somente administrador</span>
     </header>
 
-    <ThumbnailSyncPanel />
+    <div className="platform-thumbnail-tools">
+      <ThumbnailZipImportPanel />
+      <ThumbnailSyncPanel />
+    </div>
 
     {feedback && <div className={`platform-feedback ${feedback.type}`}>{feedback.text}</div>}
     {!settings.current_environment.encryption_root_configured && <div className="platform-feedback warning">Antes de trocar o banco, configure uma DRIVE_SETTINGS_ENCRYPTION_KEY própria na Vercel. O fallback atual depende da Service Role e não é seguro para uma mudança de Supabase.</div>}

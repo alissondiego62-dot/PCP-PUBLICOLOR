@@ -12,7 +12,8 @@ import {
 } from "@/lib/server/supabase-server";
 import {
   buildDriveThumbnailPath,
-  isPdfImportedPageThumbnail,
+  isOfficialOrderThumbnail,
+  isZipImportedThumbnail,
 } from "@/lib/order-thumbnail";
 
 const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -144,7 +145,7 @@ export async function POST(request: Request) {
     // atualização é feita no servidor com a chave administrativa, evitando que
     // uma política RLS ou uma perda de conexão no navegador deixe o arquivo
     // visível na aba Arquivos, mas sem imagem no Dashboard/Kanban.
-    if (record?.drive_file_id && isPdfImportedPageThumbnail(record)) {
+    if (record?.drive_file_id && isOfficialOrderThumbnail(record)) {
       const thumbnailPath = buildDriveThumbnailPath(record.drive_file_id);
       const { error: thumbnailError } = await admin
         .from("orders")
@@ -158,8 +159,10 @@ export async function POST(request: Request) {
         await admin.from("order_history").insert({
           order_id: pending.order_id,
           user_id: actor.user.id,
-          action_type: "pdf_page_thumbnail_linked",
-          description: `Miniatura definida automaticamente usando a página importada do PDF: ${record.file_name}`,
+          action_type: isZipImportedThumbnail(record) ? "thumbnail_zip_linked" : "pdf_page_thumbnail_linked",
+          description: isZipImportedThumbnail(record)
+            ? `Miniatura definida automaticamente usando o PNG importado em ZIP: ${record.file_name}`
+            : `Miniatura definida automaticamente usando a página importada do PDF: ${record.file_name}`,
         });
       }
     }

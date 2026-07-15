@@ -2,3 +2,36 @@
 @media(max-width:1100px){.platform-current-grid{grid-template-columns:1fr 1fr}.platform-two-column,.platform-sql-layout{grid-template-columns:1fr}.platform-history-card{max-height:none}.platform-history-list{max-height:500px}}
 @media(max-width:720px){.platform-heading{display:grid}.platform-heading>span{width:max-content}.platform-fields,.platform-sql-target,.platform-sql-confirm,.platform-sql-summary{grid-template-columns:1fr}.platform-fields label.wide{grid-column:auto}.platform-actions{display:grid;grid-template-columns:1fr}.platform-actions button{width:100%;min-height:43px}.platform-danger-note,.platform-bootstrap-note{display:grid}.platform-environment-history article{grid-template-columns:1fr}.platform-environment-history span{grid-column:1}.platform-card{padding:14px}}
 @media(max-width:480px){.platform-current-grid{grid-template-columns:1fr}.platform-heading{padding:16px}.platform-heading h2{font-size:16px}.platform-sql-picker{min-height:72px}.platform-current-grid article{padding:12px}}
+
+
+/* Publicolor 3.0.6 — importação em lote de miniaturas por ZIP */
+.platform-thumbnail-tools{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(360px,.85fr);gap:14px;align-items:start}
+.thumbnail-zip-card{border:2px solid #6d287c}
+.thumbnail-zip-card .platform-card-title>span{background:#f1e7f4;color:#6d287c}
+.thumbnail-zip-rules{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.thumbnail-zip-rules>span{min-width:0;padding:10px 11px;border:1px solid #e3d8e7;border-radius:9px;background:#fbf8fc;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.thumbnail-zip-rules b{width:100%;font-size:8px;color:#6d287c;text-transform:uppercase;letter-spacing:.5px}
+.thumbnail-zip-rules code{padding:4px 7px;border-radius:6px;background:#fff;color:#4f1b5d;font-size:8px;overflow-wrap:anywhere}
+.thumbnail-zip-rules small{color:#6e6471;font-size:8px;line-height:1.5}
+.thumbnail-zip-picker{position:relative;min-height:70px;border:1.5px dashed #9f78aa;border-radius:10px;padding:12px;display:grid;align-content:center;gap:4px;background:#fbf8fc;cursor:pointer;overflow:hidden}
+.thumbnail-zip-picker.ready{border-style:solid;background:#f5ecf7}
+.thumbnail-zip-picker input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.thumbnail-zip-picker span{font-size:10px;font-weight:900;color:#60236d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thumbnail-zip-picker small{font-size:8px;color:#7b6f7e}
+.thumbnail-zip-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}
+.thumbnail-zip-summary span{min-width:0;padding:9px;border:1px solid #e3e7e6;border-radius:8px;background:#f8faf9;display:grid;gap:4px;font-size:10px;font-weight:900;color:#273f44;text-align:center}
+.thumbnail-zip-summary b{font-size:7px;color:#6d287c;text-transform:uppercase;letter-spacing:.4px}
+.thumbnail-zip-details{border:1px solid #e3d8e7;border-radius:9px;overflow:hidden}
+.thumbnail-zip-details summary{padding:10px 12px;background:#f6f0f8;color:#60236d;font-size:9px;font-weight:900;cursor:pointer}
+.thumbnail-zip-details>div{max-height:230px;overflow:auto;padding:10px 12px;display:grid;gap:6px}
+.thumbnail-zip-details p{margin:0;color:#6f626f;font-size:8px;line-height:1.5;overflow-wrap:anywhere}
+.thumbnail-zip-details p b{color:#5b2267}
+.thumbnail-zip-progress{display:grid;gap:7px;padding:11px;border:1px solid #ded2e2;border-radius:9px;background:#fbf8fc}
+.thumbnail-zip-progress header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.thumbnail-zip-progress header b{min-width:0;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thumbnail-zip-progress header span,.thumbnail-zip-progress small{font-size:8px;color:#715f75}
+.thumbnail-zip-progress>div{height:8px;border-radius:999px;background:#e8ddec;overflow:hidden}
+.thumbnail-zip-progress>div i{display:block;height:100%;border-radius:inherit;background:#6d287c;transition:width .2s ease}
+@media(max-width:1180px){.platform-thumbnail-tools{grid-template-columns:1fr}}
+@media(max-width:760px){.thumbnail-zip-rules{grid-template-columns:1fr}.thumbnail-zip-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.thumbnail-zip-summary span:last-child{grid-column:1/-1}.thumbnail-zip-progress header{align-items:flex-start;flex-direction:column}}
+@media(max-width:430px){.thumbnail-zip-summary{grid-template-columns:1fr}.thumbnail-zip-summary span:last-child{grid-column:auto}}

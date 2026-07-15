@@ -60,3 +60,19 @@ export function isPdfImportedPageThumbnail(file: ThumbnailFileCandidate) {
 
   return importerNote || (category === "document" && importedPageName);
 }
+
+
+/** Identifica miniaturas enviadas pelo importador em lote de ZIP. */
+export function isZipImportedThumbnail(file: ThumbnailFileCandidate) {
+  if (!file.drive_file_id?.trim() || !isPngThumbnailCandidate(file)) return false;
+  const fileName = normalizeThumbnailText(file.file_name);
+  const notes = normalizeThumbnailText(file.notes);
+  const category = normalizeThumbnailText(file.file_category);
+  return notes.includes("miniatura_zip_publicolor")
+    || (category === "document" && /(?:^|[-_ ])miniatura\.png$/.test(fileName));
+}
+
+/** Fonte oficial de miniatura, seja página do PDF ou arquivo importado em ZIP. */
+export function isOfficialOrderThumbnail(file: ThumbnailFileCandidate) {
+  return isZipImportedThumbnail(file) || isPdfImportedPageThumbnail(file);
+}

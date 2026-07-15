@@ -59,3 +59,8 @@ Correção da cadeia de migrations e do Supabase Preview. Consulte `CORRECAO-SUP
 ## Publicolor 3.0.5
 
 O PNG gerado de cada página importada do PDF da OS passa a ser automaticamente a miniatura oficial do pedido ou subpedido. Consulte `docs/ATUALIZACAO-3.0.5.md`.
+
+
+## Publicolor 3.0.6
+
+Importação em lote de miniaturas PNG por ZIP, com identificação pelo número da OP, envio para 04 - DOCUMENTOS e substituição segura da miniatura anterior.
