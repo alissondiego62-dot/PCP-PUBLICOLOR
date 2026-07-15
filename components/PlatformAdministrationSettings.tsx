@@ -59,6 +59,28 @@ type AdministrativeHistory = {
 
 type Feedback = { type: "success" | "error" | "warning"; text: string };
 
+type ThumbnailRepairResult = {
+  ok: boolean;
+  mode: "dry-run" | "applied";
+  message: string;
+  totals: {
+    orders: number;
+    pngFiles: number;
+    repairable: number;
+    alreadyLinked: number;
+    missingPng: number;
+    ambiguous: number;
+    updated: number;
+    errors: number;
+    historyWarnings: number;
+  };
+  repairable: Array<{ opNumber: string; clientName: string; fileName: string; selectionReason: string }>;
+  updated: Array<{ opNumber: string; clientName: string; fileName: string }>;
+  missing: Array<{ opNumber: string; clientName: string; reason: string }>;
+  ambiguous: Array<{ opNumber: string; clientName: string; reason: string; candidates: string[] }>;
+  errors: Array<{ opNumber: string; message: string }>;
+};
+
 async function accessToken() {
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session?.access_token) throw new Error("Sessão expirada. Entre novamente no sistema.");
@@ -117,6 +139,7 @@ export function PlatformAdministrationSettings() {
   const [sqlFile, setSqlFile] = useState<File | null>(null);
   const [sqlPreview, setSqlPreview] = useState("");
   const [targetTest, setTargetTest] = useState<{ admin_ready: boolean; message: string; project_ref: string } | null>(null);
+  const [thumbnailRepair, setThumbnailRepair] = useState<ThumbnailRepairResult | null>(null);
 
   async function loadData() {
     setLoading(true);
@@ -303,6 +326,37 @@ export function PlatformAdministrationSettings() {
     }
   }
 
+  async function repairDriveThumbnails(apply: boolean) {
+    if (busy) return;
+    if (apply && !window.confirm(
+      "Executar agora a reparação das miniaturas? O sistema usará os PNGs já vinculados na aba Arquivos e substituirá caminhos antigos ou vazios.",
+    )) return;
+
+    setBusy(apply ? "apply-thumbnail-repair" : "analyze-thumbnail-repair");
+    setFeedback(null);
+    try {
+      const result = await apiRequest<ThumbnailRepairResult>("/api/admin/repair-drive-thumbnails", {
+        method: "POST",
+        body: JSON.stringify({
+          apply,
+          confirmation: apply ? "REPARAR MINIATURAS" : "",
+        }),
+      });
+      setThumbnailRepair(result);
+      setFeedback({
+        type: result.totals.errors > 0 ? "warning" : "success",
+        text: result.message,
+      });
+    } catch (error) {
+      setFeedback({
+        type: "error",
+        text: error instanceof Error ? error.message : "Falha ao reparar as miniaturas.",
+      });
+    } finally {
+      setBusy("");
+    }
+  }
+
   const previewRisks = useMemo(() => riskFlags(sqlPreview), [sqlPreview]);
 
   if (loading) return <section className="platform-admin-module"><div className="platform-loading">Carregando banco, ambiente e atualizações SQL…</div></section>;
@@ -322,6 +376,51 @@ export function PlatformAdministrationSettings() {
       <article><small>PUBLISHABLE KEY</small><b>{settings.current_environment.publishable_key_masked}</b><span>Variável de produção</span></article>
       <article><small>SERVICE ROLE</small><b>{settings.current_environment.service_role_key_masked}</b><span>Nunca exibida integralmente</span></article>
       <article><small>URL DO SISTEMA</small><b>{settings.current_environment.app_url || "Não informada"}</b><span>Raiz de criptografia: {settings.current_environment.encryption_root_configured ? "configurada" : "usando fallback"}</span></article>
+    </div>
+
+    <div className="platform-card">
+      <div className="platform-card-title"><span>PNG</span><div><small>EXECUÇÃO ÚNICA</small><h3>Restaurar miniaturas após a migração</h3></div></div>
+      <p className="platform-card-description">Esta correção não envia arquivos novamente. Ela procura, em cada pedido e subpedido, o PNG já vinculado na aba Arquivos e restaura o campo usado pelo Kanban. Casos com vários PNGs sem identificação clara são separados para revisão e não são alterados automaticamente.</p>
+      <div className="platform-actions">
+        <button type="button" onClick={() => void repairDriveThumbnails(false)} disabled={Boolean(busy)}>
+          {busy === "analyze-thumbnail-repair" ? "Analisando…" : "Analisar miniaturas"}
+        </button>
+        <button
+          type="button"
+          className="danger"
+          onClick={() => void repairDriveThumbnails(true)}
+          disabled={Boolean(busy) || !thumbnailRepair || thumbnailRepair.totals.repairable === 0}
+        >
+          {busy === "apply-thumbnail-repair" ? "Restaurando…" : `Restaurar ${thumbnailRepair?.totals.repairable || 0} miniatura(s)`}
+        </button>
+      </div>
+      {thumbnailRepair && <div className="platform-sql-summary">
+        <span><b>Pedidos analisados</b>{thumbnailRepair.totals.orders}</span>
+        <span><b>PNG encontrados</b>{thumbnailRepair.totals.pngFiles}</span>
+        <span><b>Prontos para reparar</b>{thumbnailRepair.totals.repairable}</span>
+        <span><b>Já vinculados</b>{thumbnailRepair.totals.alreadyLinked}</span>
+        <span><b>Sem PNG</b>{thumbnailRepair.totals.missingPng}</span>
+        <span><b>Revisão manual</b>{thumbnailRepair.totals.ambiguous}</span>
+        {thumbnailRepair.mode === "applied" && <span><b>Atualizados</b>{thumbnailRepair.totals.updated}</span>}
+        {thumbnailRepair.totals.errors > 0 && <span><b>Erros</b>{thumbnailRepair.totals.errors}</span>}
+      </div>}
+      {thumbnailRepair?.ambiguous.length > 0 && <details className="platform-sql-preview">
+        <summary>Pedidos com mais de um PNG sem identificação clara</summary>
+        <div className="platform-history-list">{thumbnailRepair.ambiguous.map((item) => <article key={item.opNumber}>
+          <header><b>OP {item.opNumber}</b><span>Revisar</span></header>
+          <small>{item.clientName}</small>
+          <p>{item.reason}</p>
+          <code>{item.candidates.join(" · ")}</code>
+        </article>)}</div>
+      </details>}
+      {thumbnailRepair?.errors.length > 0 && <details className="platform-sql-preview">
+        <summary>Erros durante a execução</summary>
+        <div className="platform-history-list">{thumbnailRepair.errors.map((item) => <article key={item.opNumber}>
+          <header><b>OP {item.opNumber}</b><span>Erro</span></header>
+          <p>{item.message}</p>
+        </article>)}</div>
+      </details>}
+      <div className="platform-danger-note"><b>Depois de usar</b><span>Atualize a página com Ctrl + F5. Como esta é uma ferramenta temporária, remova este cartão e a rota <code>/api/admin/repair-drive-thumbnails</code> do projeto após confirmar as miniaturas.</span></div>
     </div>
 
     <div className="platform-two-column">
