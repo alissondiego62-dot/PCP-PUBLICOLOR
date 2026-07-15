@@ -1,0 +1,28 @@
+PCP PUBLICOLOR 3.0 — ATUALIZAÇÃO COMPLETA
+
+Este ZIP contém o projeto integral. O conteúdo começa diretamente em app/, components/, lib/ e supabase/.
+Não crie uma segunda pasta PCP-PUBLICOLOR dentro do repositório.
+
+ORDEM RECOMENDADA
+
+1. Faça backup do repositório e do Supabase.
+2. No SQL Editor do Supabase, execute:
+   SQL-ATUALIZACAO-PUBLICOLOR-3.0.sql
+3. Na raiz atual do GitHub PCP-PUBLICOLOR, substitua o conteúdo pelos arquivos deste ZIP.
+4. Preserve apenas o seu .env.local local. Nunca envie chaves secretas ao GitHub.
+5. Execute localmente:
+   pnpm install --frozen-lockfile
+   pnpm validate
+6. Faça commit e push para a branch de produção.
+7. Aguarde o deploy da Vercel.
+8. Atualize o navegador com Ctrl + F5.
+
+TESTES OBRIGATÓRIOS
+
+- Dashboard: sem Importar PDF e sem Novo pedido.
+- Produção: sem Importar PDF e sem Novo pedido.
+- Pedidos: com Importar PDF e Novo pedido.
+- Configurações: botão permanente de sincronização de miniaturas.
+- Responsividade: 1440 px, 1024 px, 768 px, 430 px e 360 px.
+
+Consulte README.md e docs/VALIDACAO.md.

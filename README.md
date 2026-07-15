@@ -1,55 +1,52 @@
-# Publicolor 2.0 — Materiais dos clientes | modelo atualizado
+# PCP Publicolor 3.0
 
-Pacote reconstruído para a versão de produção mais recente localizada em
-**14/07/2026**, commit **5136fc8**.
+Sistema web de PCP para controle de pedidos, produção, agenda de instalação/entrega, clientes, atividades, arquivos e histórico.
 
-## O que mudou em relação ao pacote anterior
+## Requisitos
 
-O pacote anterior considerava um cadastro de cliente em modal. A versão atual
-usa uma página completa com as classes `client-detail-view`,
-`client-detail-header`, `client-profile-grid` e `client-orders-group`.
+- Node.js 22.13 ou superior
+- pnpm 11.12
+- Projeto Supabase configurado
+- Projeto Vercel configurado
+- Google Drive OAuth configurado para o módulo de arquivos
 
-Esta revisão:
+## Instalação local
 
-- adiciona a aba **Materiais** no modelo atual;
-- preserva os dados e os pedidos existentes;
-- reutiliza a identidade roxa e amarela publicada;
-- diferencia materiais permanentes do cliente dos materiais de cada OS;
-- não duplica a importação da página TINTAS;
-- funciona em desktop e celular;
-- mantém o cadastro, edição, busca, filtro e remoção lógica;
-- mantém a quantidade de LEDs por palavra, posição e letra.
-
-## Estado do banco verificado
-
-- 151 materiais da página TINTAS;
-- 67 clientes com materiais;
-- 151 registros ativos;
-- A ROMANA, MOVA PACE FITNESS, GOIANA EXPRESSO, GAVIÃO e VEREDAS conferidos;
-- tabelas `client_materials` e `client_material_import_issues` preservadas.
-
-## Uso recomendado
-
-1. Copie os arquivos de `src`.
-2. Siga `docs/INTEGRACAO_MODELO_ATUAL.md`.
-3. Não execute novamente a importação no banco de produção.
-4. Mantenha o SQL no repositório para instalações novas ou recuperação.
-5. Rode o build e teste os clientes A ROMANA e MOVA PACE FITNESS.
-6. Publique no Vercel.
-
-## Banco novo ou ambiente de teste
-
-Para uma instalação sem essas tabelas, execute:
-
-```text
-supabase/migrations/20260714223000_client_materials_tintas.sql
+```bash
+pnpm install
+cp .env.example .env.local
+pnpm dev
 ```
 
-O SQL é idempotente e utiliza `source_key` para impedir duplicação.
+## Validação antes de publicar
 
-## Limitação de publicação direta
+```bash
+pnpm validate
+```
 
-A implantação atual está ligada a um repositório GitHub privado. O conector
-disponível nesta sessão não recebeu acesso ao conteúdo do repositório, portanto
-o pacote foi preparado contra os arquivos publicados e o esquema real do
-Supabase, sem efetuar commit ou deploy automático.
+## Publicação
+
+O projeto está preparado para Vercel. O diretório raiz da Vercel deve apontar para a raiz deste repositório.
+
+## Atualização do banco
+
+Execute no SQL Editor do Supabase:
+
+```text
+SQL-ATUALIZACAO-PUBLICOLOR-3.0.sql
+```
+
+O mesmo SQL está registrado como migration em:
+
+```text
+supabase/migrations/20260729010000_publicolor_3_performance_and_thumbnail_views.sql
+```
+
+## Regras de interface
+
+- **Dashboard:** somente consulta e indicadores.
+- **Produção · Kanban:** movimentação e acompanhamento dos pedidos, sem criação ou importação.
+- **Pedidos:** local exclusivo para `Importar PDF` e `Novo pedido`.
+- **Configurações:** inclui sincronização permanente das miniaturas da aba Arquivos.
+
+Consulte `docs/ARQUITETURA.md` e `docs/ATUALIZACAO-3.0.md`.

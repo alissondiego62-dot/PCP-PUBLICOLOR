@@ -9,7 +9,6 @@ import { ClientsView } from "@/components/ClientsView";
 import { DataImportExportSettings } from "@/components/DataImportExportSettings";
 import { GoogleDriveSettings } from "@/components/GoogleDriveSettings";
 import { PlatformAdministrationSettings } from "@/components/PlatformAdministrationSettings";
-import { ThumbnailRepairSettings } from "@/components/ThumbnailRepairSettings";
 import { OrderDriveUpload } from "@/components/OrderDriveUpload";
 import { OrderBatchForm, type OrderBatchSubmission } from "@/components/OrderBatchForm";
 import { PdfOrderImporter } from "@/components/PdfOrderImporter";
@@ -53,6 +52,8 @@ import type {
 import { supabase } from "@/lib/supabase";
 import { driveAuthenticatedJson, uploadFileToOrderDrive, type DriveConnectionStatus } from "@/lib/google-drive-client";
 import { requiresAutomaticOrderNumber } from "@/lib/order-number";
+import { buildDriveThumbnailPath, driveThumbnailFileId } from "@/lib/order-thumbnail";
+import { forEachWithConcurrency } from "@/lib/async";
 
 const DEFAULT_CONSULTANTS = [
   "BRHENO SALLUM",
@@ -70,21 +71,43 @@ const DEFAULT_CONSULTANTS = [
 ] as const;
 
 const UNASSIGNED_RESPONSIBLE_FILTER = "__unassigned__";
-const PDF_DRIVE_THUMBNAIL_PREFIX = "gdrive-pdf:";
-
-function driveThumbnailFileId(path: string | null | undefined) {
-  const value = path?.trim() || "";
-  return value.startsWith(PDF_DRIVE_THUMBNAIL_PREFIX)
-    ? value.slice(PDF_DRIVE_THUMBNAIL_PREFIX.length).trim()
-    : "";
-}
-
 function isPdfPageThumbnailPath(path: string | null | undefined) {
   return Boolean(path?.includes("/pdf-pages/") || driveThumbnailFileId(path));
 }
 
 function normalizedResponsibleName(value: string | null | undefined) {
   return value?.trim().toLocaleUpperCase("pt-BR") || "";
+}
+
+type CommentCountQueryResult = {
+  counts: Record<string, number>;
+  error: { code?: string; message: string } | null;
+};
+
+async function fetchOrderCommentCounts(): Promise<CommentCountQueryResult> {
+  const optimizedResult = await supabase
+    .from("order_comment_counts")
+    .select("order_id,comment_count");
+
+  if (!optimizedResult.error) {
+    const counts = ((optimizedResult.data || []) as Array<{ order_id: string; comment_count: number | string }>)
+      .reduce<Record<string, number>>((result, item) => {
+        result[item.order_id] = Number(item.comment_count) || 0;
+        return result;
+      }, {});
+    return { counts, error: null };
+  }
+
+  if (!["42P01", "PGRST205"].includes(optimizedResult.error.code || "")) {
+    return { counts: {}, error: optimizedResult.error };
+  }
+
+  const fallbackResult = await supabase.from("order_comments").select("order_id");
+  const counts = (fallbackResult.data || []).reduce<Record<string, number>>((result, item) => {
+    result[item.order_id] = (result[item.order_id] || 0) + 1;
+    return result;
+  }, {});
+  return { counts, error: fallbackResult.error };
 }
 
 function orderResponsibleName(order: Order) {
@@ -225,6 +248,9 @@ export default function Home() {
   const topScrollRef = useRef<HTMLDivElement | null>(null);
   const syncingBoardScroll = useRef(false);
   const noticeTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const initialDataLoadedRef = useRef(false);
+  const imageUrlsRef = useRef<Record<string, string>>({});
+  const imagePathsRef = useRef<Record<string, string>>({});
   const [boardScrollWidth, setBoardScrollWidth] = useState(0);
 
   const consultantOptions = useMemo(() => {
@@ -315,6 +341,11 @@ export default function Home() {
 
   useEffect(() => () => {
     if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    Object.values(imageUrlsRef.current).forEach((url) => {
+      if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+    });
+    imageUrlsRef.current = {};
+    imagePathsRef.current = {};
   }, []);
 
   useEffect(() => {
@@ -355,7 +386,15 @@ export default function Home() {
         setSectors([]);
         setProfiles([]);
         setClients([]);
-        setImageUrls({});
+        setImageUrls((current) => {
+          Object.values(current).forEach((url) => {
+            if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+          });
+          return {};
+        });
+        imageUrlsRef.current = {};
+        imagePathsRef.current = {};
+        initialDataLoadedRef.current = false;
         setUserModalOpen(false);
       }
       setUser(session?.user ?? null);
@@ -368,16 +407,16 @@ export default function Home() {
     if (!user) return;
     let active = true;
     const load = async () => {
-      setLoading(true);
-      const [sectorResult, orderResult, commentResult, profileResult, clientResult] = await Promise.all([
+      if (!initialDataLoadedRef.current) setLoading(true);
+      const [sectorResult, orderResult, commentCountResult, profileResult, clientResult] = await Promise.all([
         supabase.from("sectors").select("id,name,position,active").order("position"),
         supabase.from("orders").select("id,op_number,client_id,client_name,description,delivery_date,priority,sector_id,status,responsible_user_id,consultant_name,main_image_path,blocked,completed_at,installation_scheduled_at,installation_address,installation_team,installation_vehicle,installation_status,installation_notes,installation_completed_at,installation_time_confirmed,materials,notes,created_at").order("position"),
-        supabase.from("order_comments").select("order_id"),
+        fetchOrderCommentCounts(),
         supabase.from("profiles").select("id,name,email,role,active,created_at").order("name"),
         supabase.from("clients").select("*").order("name"),
       ]);
       if (!active) return;
-      const dbError = sectorResult.error || orderResult.error || commentResult.error || profileResult.error || clientResult.error;
+      const dbError = sectorResult.error || orderResult.error || commentCountResult.error || profileResult.error || clientResult.error;
       if (dbError) {
         const missingSchema = ["42P01", "PGRST205"].includes(dbError.code || "");
         setError(missingSchema ? "A conexão está correta, mas as tabelas ainda precisam ser instaladas no Supabase." : `Não foi possível carregar os pedidos: ${dbError.message}`);
@@ -398,17 +437,30 @@ export default function Home() {
           setError("Seu perfil não está ativo. Peça a um administrador para revisar o seu acesso.");
         }
         const nextImageUrls: Record<string, string> = {};
-        const driveImages = loadedOrders.filter((order) => driveThumbnailFileId(order.main_image_path));
+        const previousImageUrls = imageUrlsRef.current;
+        const previousImagePaths = imagePathsRef.current;
+        const reusableOrderIds = new Set<string>();
+
+        loadedOrders.forEach((order) => {
+          const path = order.main_image_path?.trim() || "";
+          const existingUrl = previousImageUrls[order.id];
+          if (path && existingUrl && previousImagePaths[order.id] === path) {
+            nextImageUrls[order.id] = existingUrl;
+            reusableOrderIds.add(order.id);
+            return;
+          }
+          if (path && /^https?:\/\//i.test(path)) nextImageUrls[order.id] = path;
+        });
+
+        const driveImages = loadedOrders.filter((order) =>
+          !reusableOrderIds.has(order.id) && driveThumbnailFileId(order.main_image_path),
+        );
         const storedImages = loadedOrders.filter((order) =>
-          order.main_image_path
+          !reusableOrderIds.has(order.id)
+          && order.main_image_path
           && !/^https?:\/\//i.test(order.main_image_path)
           && !driveThumbnailFileId(order.main_image_path),
         );
-        loadedOrders.forEach((order) => {
-          if (order.main_image_path && /^https?:\/\//i.test(order.main_image_path)) {
-            nextImageUrls[order.id] = order.main_image_path;
-          }
-        });
         if (storedImages.length) {
           const { data: signedImages } = await supabase.storage
             .from("order-thumbnails")
@@ -422,7 +474,7 @@ export default function Home() {
           const { data: sessionData } = await supabase.auth.getSession();
           const accessToken = sessionData.session?.access_token;
           if (accessToken) {
-            await Promise.all(driveImages.map(async (order) => {
+            await forEachWithConcurrency(driveImages, 6, async (order) => {
               const fileId = driveThumbnailFileId(order.main_image_path);
               if (!fileId) return;
               try {
@@ -436,7 +488,7 @@ export default function Home() {
                 // O pedido continua disponível mesmo se a miniatura do Drive
                 // estiver temporariamente indisponível.
               }
-            }));
+            });
           }
         }
         if (!active) {
@@ -444,34 +496,67 @@ export default function Home() {
           return;
         }
         setImageUrls((current) => {
-          Object.values(current).forEach((url) => { if (url.startsWith("blob:")) URL.revokeObjectURL(url); });
+          Object.entries(current).forEach(([orderId, url]) => {
+            if (url.startsWith("blob:") && nextImageUrls[orderId] !== url) URL.revokeObjectURL(url);
+          });
+          imageUrlsRef.current = nextImageUrls;
+          imagePathsRef.current = Object.fromEntries(
+            loadedOrders
+              .filter((order) => Boolean(order.main_image_path?.trim()))
+              .map((order) => [order.id, order.main_image_path!.trim()]),
+          );
           return nextImageUrls;
         });
-        const counts = (commentResult.data || []).reduce<Record<string, number>>((result, item) => {
-          result[item.order_id] = (result[item.order_id] || 0) + 1;
-          return result;
-        }, {});
-        setCommentCounts(counts);
+        setCommentCounts(commentCountResult.counts);
       }
+      initialDataLoadedRef.current = true;
       setLoading(false);
     };
     void load();
     let reloadTimer: ReturnType<typeof window.setTimeout> | null = null;
+    let commentsReloadTimer: ReturnType<typeof window.setTimeout> | null = null;
+    let clientsReloadTimer: ReturnType<typeof window.setTimeout> | null = null;
+
     const scheduleLoad = () => {
       if (reloadTimer) window.clearTimeout(reloadTimer);
       // Uma única operação no banco pode disparar vários eventos de realtime.
       // O pequeno agrupamento evita recarregar todas as listas repetidamente.
       reloadTimer = window.setTimeout(() => void load(), 220);
     };
+
+    const loadCommentCounts = async () => {
+      const result = await fetchOrderCommentCounts();
+      if (!active || result.error) return;
+      setCommentCounts(result.counts);
+    };
+
+    const loadClients = async () => {
+      const { data, error: clientsError } = await supabase.from("clients").select("*").order("name");
+      if (!active || clientsError) return;
+      setClients((data || []) as Client[]);
+    };
+
+    const scheduleCommentCounts = () => {
+      if (commentsReloadTimer) window.clearTimeout(commentsReloadTimer);
+      commentsReloadTimer = window.setTimeout(() => void loadCommentCounts(), 160);
+    };
+
+    const scheduleClients = () => {
+      if (clientsReloadTimer) window.clearTimeout(clientsReloadTimer);
+      clientsReloadTimer = window.setTimeout(() => void loadClients(), 180);
+    };
+
     const channel = supabase.channel("orders-board")
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, scheduleLoad)
-      .on("postgres_changes", { event: "*", schema: "public", table: "order_comments" }, scheduleLoad)
+      .on("postgres_changes", { event: "*", schema: "public", table: "order_comments" }, scheduleCommentCounts)
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleLoad)
-      .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, scheduleLoad)
+      .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, scheduleClients)
       .subscribe();
     return () => {
       active = false;
       if (reloadTimer) window.clearTimeout(reloadTimer);
+      if (commentsReloadTimer) window.clearTimeout(commentsReloadTimer);
+      if (clientsReloadTimer) window.clearTimeout(clientsReloadTimer);
       void supabase.removeChannel(channel);
     };
   }, [user, reloadToken]);
@@ -1796,7 +1881,7 @@ export default function Home() {
           const driveFileId = driveRecord.drive_file_id?.trim();
           if (!driveFileId) throw new Error("O Google Drive não retornou o ID do arquivo.");
 
-          const thumbnailPath = `${PDF_DRIVE_THUMBNAIL_PREFIX}${driveFileId}`;
+          const thumbnailPath = buildDriveThumbnailPath(driveFileId);
           const { error: imageUpdateError } = await supabase
             .from("orders")
             .update({ main_image_path: thumbnailPath })
@@ -1874,12 +1959,11 @@ export default function Home() {
     </aside>
     {sidebarOpen && <button type="button" className="sidebar-backdrop" aria-label="Fechar menu" onClick={() => setSidebarOpen(false)} />}
     <section className="content">
-      <header><div className="page-heading"><button type="button" className="mobile-menu-button" aria-label="Abrir menu" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}>☰</button><div><p className="eyebrow">{viewMeta[activeView].eyebrow}</p><h1>{viewMeta[activeView].title}</h1><p>{viewMeta[activeView].description}</p></div></div><div className="header-actions"><span className="sync-status">● Conectado</span>{currentProfile && <span className="role-badge" data-role={isAdmin ? "admin" : canOperate ? "operator" : "user"}>{roleLabel[currentProfile.role]}</span>}{canOperate && (activeView === "kanban" || activeView === "orders") && <div className="header-order-actions"><button type="button" className="pdf-import-header-button" onClick={() => { setError(""); setPdfImporterOpen(true); }} disabled={!activeSectors.length}>⇧ Importar PDF</button><button type="button" className="primary header-new-order" onClick={() => openNewOrder()} disabled={!activeSectors.length}>＋ Novo pedido</button></div>}</div></header>
+      <header><div className="page-heading"><button type="button" className="mobile-menu-button" aria-label="Abrir menu" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}>☰</button><div><p className="eyebrow">{viewMeta[activeView].eyebrow}</p><h1>{viewMeta[activeView].title}</h1><p>{viewMeta[activeView].description}</p></div></div><div className="header-actions"><span className="sync-status">● Conectado</span>{currentProfile && <span className="role-badge" data-role={isAdmin ? "admin" : canOperate ? "operator" : "user"}>{roleLabel[currentProfile.role]}</span>}{canOperate && activeView === "orders" && <div className="header-order-actions"><button type="button" className="pdf-import-header-button" onClick={() => { setError(""); setPdfImporterOpen(true); }} disabled={!activeSectors.length}>⇧ Importar PDF</button><button type="button" className="primary header-new-order" onClick={() => openNewOrder()} disabled={!activeSectors.length}>＋ Novo pedido</button></div>}</div></header>
       {error && <div className="db-alert"><b>Atenção</b><span>{error}</span></div>}{notice && <div className="toast">✓ {notice}</div>}
       {activeView === "dashboard" && <section className="v3-dashboard">
         <div className="v3-hero">
           <div><span>PUBLICOLOR PCP</span><h2>Visão geral da operação</h2><p>Prioridades, gargalos e compromissos de instalação atualizados em tempo real.</p></div>
-          {canOperate && <div className="dashboard-order-actions"><button type="button" onClick={() => { setError(""); setPdfImporterOpen(true); }}>⇧ Importar PDF</button><button type="button" className="primary" onClick={() => openNewOrder()}>＋ Nova ordem</button></div>}
         </div>
         <div className="v3-kpi-grid">
           <article><i>▦</i><small>Pedidos ativos</small><strong>{activeOrderCounts.orders}</strong><span>Ordens principais no fluxo</span></article>
@@ -2069,7 +2153,6 @@ export default function Home() {
         onOpenOrder={openOrder}
         onNewClient={() => openCreateClient()}
         onEditClient={openEditClient}
-        onNewOrder={(client) => openNewOrder(client.id)}
       />}
 
       {activeView === "reports" && <section className="management-view"><div className="summary-strip"><article><small>Pedidos ativos</small><strong>{activeOrders.length}</strong></article><article><small>Em andamento</small><strong>{activeOrders.filter((order) => order.status === "in_progress").length}</strong></article><article><small>Atrasados</small><strong>{activeOrders.filter((order) => dueLabel(order.delivery_date).startsWith("Atrasado")).length}</strong></article><article><small>Urgentes</small><strong>{activeOrders.filter((order) => order.priority === "urgent").length}</strong></article></div><div className="report-card"><div className="report-heading"><div><b>Distribuição por setor</b><small>Pedidos ativos neste momento</small></div><span>Atualização automática</span></div><div className="sector-bars">{sectorReport.map((item) => <div className="sector-bar" key={item.sector.id}><label><span>{item.sector.name}</span><b>{item.count}</b></label><div><i style={{ width: `${(item.count / largestSectorCount) * 100}%` }} /></div></div>)}</div></div></section>}
@@ -2093,7 +2176,6 @@ export default function Home() {
           <article className="settings-card"><span className="settings-icon">▦</span><div><small>SETORES ATIVOS</small><b>{activeSectors.length} setores</b><p>A ordem dos setores segue a configuração do banco.</p></div></article>
           <article className="settings-card"><span className="settings-icon">✓</span><div><small>STATUS DO SISTEMA</small><b>Operacional</b><p>Interface e serviços carregados corretamente.</p></div></article>
         </div>
-        <ThumbnailRepairSettings />
         <PlatformAdministrationSettings />
         <GoogleDriveSettings />
         <DataImportExportSettings orders={orders} clients={clients} sectors={sectors} onImportComplete={() => setReloadToken((current) => current + 1)} />

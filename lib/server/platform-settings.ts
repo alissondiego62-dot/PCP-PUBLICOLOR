@@ -255,7 +255,7 @@ async function upsertVercelVariable(settings: PlatformSettingsRow, input: {
         value: input.value,
         type: input.type,
         target: ["production"],
-        comment: "Atualizado pelo painel administrativo do Publicolor 2.0",
+        comment: "Atualizado pelo painel administrativo do Publicolor 3.0",
       }),
     },
   );

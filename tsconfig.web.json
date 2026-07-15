@@ -10,9 +10,9 @@
   ],
   "exclude": [
     "node_modules",
+    "dist",
+    ".next",
     "supabase/functions",
-    "worker",
-    "db",
     "vite.config.ts"
   ]
 }

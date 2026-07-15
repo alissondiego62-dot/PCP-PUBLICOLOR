@@ -11,7 +11,6 @@ type Props = {
   onOpenOrder: (order: Order, tab: DetailTab) => void;
   onNewClient: () => void;
   onEditClient: (client: Client) => void;
-  onNewOrder: (client: Client) => void;
 };
 
 
@@ -21,7 +20,7 @@ function orderBelongsToClient(order: Order, client: Client) {
   return legacyNames.has(order.client_name);
 }
 
-export function ClientsView({ clients, orders, canOperate, onOpenOrder, onNewClient, onEditClient, onNewOrder }: Props) {
+export function ClientsView({ clients, orders, canOperate, onOpenOrder, onNewClient, onEditClient }: Props) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = clients.find((client) => client.id === selectedId) || null;
@@ -48,7 +47,7 @@ export function ClientsView({ clients, orders, canOperate, onOpenOrder, onNewCli
             <h2>{selected.trade_name || selected.name}</h2>
             <p>{selected.name}</p>
           </div>
-          {canOperate && <div className="client-detail-actions"><button type="button" onClick={() => onEditClient(selected)}>Editar cadastro</button><button type="button" className="primary" onClick={() => onNewOrder(selected)}>＋ Novo pedido</button></div>}
+          {canOperate && <div className="client-detail-actions"><button type="button" onClick={() => onEditClient(selected)}>Editar cadastro</button></div>}
         </div>
         <div className="summary-strip client-detail-summary">
           <article><small>Pedidos ativos</small><strong>{active.length}</strong></article>

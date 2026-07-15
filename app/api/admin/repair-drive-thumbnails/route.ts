@@ -5,8 +5,8 @@ import {
   requireAppUser,
   responseMessage,
 } from "@/lib/server/supabase-server";
+import { buildDriveThumbnailPath } from "@/lib/order-thumbnail";
 
-const DRIVE_THUMBNAIL_PREFIX = "gdrive-pdf:";
 const PAGE_SIZE = 1000;
 const UPDATE_BATCH_SIZE = 25;
 const MAX_REPORT_ITEMS = 100;
@@ -111,7 +111,37 @@ async function loadAllOrders(): Promise<OrderRow[]> {
   return rows;
 }
 
+async function loadPngRowsFromView(): Promise<OrderFileRow[] | null> {
+  const admin = getSupabaseAdmin();
+  const rows: OrderFileRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await admin
+      .from("order_thumbnail_candidates")
+      .select("id,order_id,file_name,file_type,file_category,drive_file_id,notes,drive_modified_at,created_at")
+      .order("created_at", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) {
+      // Compatibilidade com bancos que ainda não executaram o SQL 3.0.
+      if (["42P01", "PGRST205"].includes(error.code || "")) return null;
+      throw new Error(`Não foi possível carregar a visão de miniaturas: ${error.message}`);
+    }
+
+    const page = (data || []) as OrderFileRow[];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  return rows;
+}
+
 async function loadAllPngFiles(): Promise<OrderFileRow[]> {
+  const optimizedRows = await loadPngRowsFromView();
+  if (optimizedRows) return optimizedRows;
+
   const admin = getSupabaseAdmin();
   const rows: OrderFileRow[] = [];
   let from = 0;
@@ -169,7 +199,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      const nextPath = `${DRIVE_THUMBNAIL_PREFIX}${selected.drive_file_id}`;
+      const nextPath = buildDriveThumbnailPath(selected.drive_file_id);
       if (order.main_image_path?.trim() === nextPath) {
         alreadyLinked.push({ opNumber: order.op_number, fileName: selected.file_name });
         continue;

@@ -17,6 +17,7 @@ import "./platform-admin.css";
 import "./site-audit.css";
 import "./pdf-import.css";
 import "./activities.css";
+import "./responsive-2026.css";
 
 export const metadata: Metadata = {
   title: "Publicolor | Controle de Produção",
