@@ -1,62 +1,59 @@
-# Publicolor PCP 3.2.0
+# Publicolor PCP 3.4.0
 
-Sistema de planejamento e controle de produção da Publicolor.
+Sistema operacional de PCP para pedidos, produção, agenda, atividades, compras, clientes, usuários, arquivos e integrações da Publicolor.
 
-## Destaques da versão
+## Páginas
 
-- Dashboard operacional reformulado e mantido como página inicial.
-- URLs independentes para Dashboard, Kanban, Pedidos, Concluídos, Agenda, Atividades e Compras, Clientes, Usuários e Configurações.
-- Atualizar o navegador mantém a página atual.
-- Página **Relatórios** removida do menu; os principais indicadores foram incorporados ao Dashboard.
-- Página **Atividades** renomeada para **Atividades e Compras**.
-- Abas internas: Atividades, Compras e Finalizadas.
-- Nome do material editável diretamente na atividade de compra, com sincronização para a OS.
-- Botão rápido para abrir a OS vinculada pela atividade.
-- Otimização de índices e consultas do Supabase.
-- PWA iniciando no Dashboard e cache de navegação atualizado para a versão 3.2.0.
+- Dashboard — página inicial
+- Produção — Kanban responsivo
+- Pedidos
+- Concluídos
+- Agenda
+- Atividades e Compras
+- Clientes
+- Usuários
+- Configurações
 
-## Rotas
+Cada página possui rota própria e mantém a navegação após atualizar o navegador ou o PWA.
 
-```text
-/dashboard
-/producao
-/pedidos
-/concluidos
-/agenda
-/atividades-compras
-/clientes
-/usuarios
-/configuracoes
-```
+## Destaques da versão 3.4.0
 
-## Atualização do banco
+- Dashboard operacional no lugar da página de Relatórios;
+- consultas e Realtime limitados por página;
+- páginas carregadas sob demanda;
+- Kanban com capacidade, tempo no setor e modos compacto/detalhado;
+- Pedidos com paginação, ações em lote e CSV;
+- Concluídos paginados no banco;
+- Agenda mensal, semanal e diária com conflitos e capacidade;
+- Atividades e Compras compactas, com valores, recebimento parcial e OS vinculada;
+- edição do material na atividade sincronizada com a OS;
+- Clientes, Usuários e Configurações reformulados;
+- busca global e central de pendências;
+- OS com abas carregadas sob demanda;
+- PWA versionado e atualização preservando a rota;
+- auditoria, observabilidade e fila de integrações;
+- SQL cumulativo para atualizar bancos que ainda não possuem Materiais e Compras.
 
-Execute primeiro em homologação:
+## Escopo excluído
 
-```text
-SQL-ATUALIZACAO-PUBLICOLOR-3.2.0.sql
-```
+A versão 3.4.0 não inclui fornecedores ou cotações. O status legado **Aguardando orçamento** continua disponível apenas como etapa do fluxo.
 
-Depois valide:
+## Atualização
 
-```text
-SQL-VALIDAR-PUBLICOLOR-3.2.0.sql
-```
+Consulte:
 
-O SQL é cumulativo: inclui as estruturas de materiais, compras, hierarquia e preços das versões 3.1.3/3.1.4, além das otimizações da versão 3.2.0.
+- `COMO-ATUALIZAR-PUBLICOLOR-3.4.0.txt`
+- `SQL-ATUALIZACAO-PUBLICOLOR-3.4.0.sql`
+- `SQL-VALIDAR-PUBLICOLOR-3.4.0.sql`
+- `docs/ATUALIZACAO-3.4.0.md`
+- `docs/AUDITORIA-FINAL-3.4.0.md`
 
-## Publicação
-
-Preserve somente `.git` e `.env.local`, substitua os demais arquivos pelo conteúdo do ZIP e execute:
+## Validação
 
 ```powershell
 corepack enable
 pnpm install --frozen-lockfile
 pnpm validate
-
-git add -A
-git commit -m "Publicolor 3.2.0: dashboard, rotas e otimizacoes"
-git push
 ```
 
-Consulte `COMO-ATUALIZAR-PUBLICOLOR-3.2.0.txt` e `docs/ATUALIZACAO-3.2.0.md`.
+O projeto exige Node.js 24.x e pnpm 11.12.0.

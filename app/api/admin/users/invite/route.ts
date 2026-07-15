@@ -8,7 +8,7 @@ import {
   responseMessage,
 } from "@/lib/server/supabase-server";
 
-const allowedRoles = new Set<AppRole>(["admin", "production", "viewer"]);
+const allowedRoles = new Set<AppRole>(["admin", "manager", "production", "viewer"]);
 
 function cleanText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -97,8 +97,10 @@ export async function POST(request: Request) {
         email,
         role,
         active: true,
+        invited_at: new Date().toISOString(),
+        invite_status: "pending",
       }, { onConflict: "id" })
-      .select("id,name,email,role,active,created_at")
+      .select("id,name,email,role,active,created_at,last_seen_at,invited_at,invite_status")
       .single();
 
     if (profileError || !profile) {

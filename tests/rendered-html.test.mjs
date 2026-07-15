@@ -42,6 +42,7 @@ for (const pathname of [
   "/agenda",
   "/atividades-compras",
   "/clientes",
+  "/usuarios",
   "/configuracoes",
 ]) {
   test(`renderiza a rota independente ${pathname}`, async () => {

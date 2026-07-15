@@ -4,7 +4,7 @@ export type Priority = "low" | "normal" | "high" | "urgent";
 export type AppRole = "admin" | "manager" | "production" | "viewer";
 export type InstallationStatus = "pending" | "scheduled" | "in_progress" | "completed" | "cancelled";
 
-export type Sector = { id: string; name: string; position: number; active: boolean };
+export type Sector = { id: string; name: string; position: number; active: boolean; wip_limit?: number | null };
 
 export type Client = {
   id: string;
@@ -24,7 +24,7 @@ export type Client = {
   created_at: string;
   updated_at: string;
 };
-export type Profile = { id: string; name: string; email: string; role: AppRole; active: boolean; created_at: string };
+export type Profile = { id: string; name: string; email: string; role: AppRole; active: boolean; created_at: string; last_seen_at?: string | null; invited_at?: string | null; invite_status?: "pending" | "accepted" | "expired" | "cancelled" | null };
 export type Author = { name: string; email: string } | null;
 
 export type Order = {
@@ -53,6 +53,9 @@ export type Order = {
   materials: string | null;
   notes: string | null;
   created_at: string;
+  updated_at?: string;
+  sector_entered_at?: string | null;
+  deleted_at?: string | null;
 };
 
 export type OrderPatch = Partial<Pick<Order,
@@ -104,6 +107,15 @@ export type OrderMaterial = {
   quantity: number;
   unit: string;
   unit_price: number | null;
+  actual_unit_price?: number | null;
+  purchased_quantity?: number | null;
+  received_quantity?: number | null;
+  purchase_order_number?: string | null;
+  purchase_ordered_at?: string | null;
+  invoice_number?: string | null;
+  purchase_document_url?: string | null;
+  invoice_file_url?: string | null;
+  receipt_notes?: string | null;
   width: number | null;
   status: "planned" | "reserved" | "consumed";
   availability: "available" | "unavailable";
@@ -114,6 +126,7 @@ export type OrderMaterial = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 };
 export type ChecklistItem = { id: string; order_id: string; label: string; category: string; completed: boolean; position: number; completed_at: string | null; created_at: string };
 export type OrderFileEntry = {

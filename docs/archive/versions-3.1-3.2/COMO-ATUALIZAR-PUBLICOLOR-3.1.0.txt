@@ -1,0 +1,40 @@
+PUBLICOLOR PCP 3.1.0 — ATUALIZAÇÃO COMPLETA
+
+1. Faça backup do repositório e do Supabase de produção.
+2. Crie ou confirme o ambiente de homologação separado.
+3. Preserve somente a pasta .git e o seu .env.local na pasta local do projeto.
+4. Extraia o conteúdo deste ZIP diretamente na raiz PCP-PUBLICOLOR.
+5. No Supabase de HOMOLOGAÇÃO, execute SQL-ATUALIZACAO-PUBLICOLOR-3.1.0.sql.
+6. Configure as variáveis usando .env.homologation.example.
+7. Execute:
+
+   corepack enable
+   pnpm install --frozen-lockfile
+   pnpm validate
+
+8. Para testes responsivos locais, instale Playwright Python:
+
+   python -m pip install -r requirements-e2e.txt
+   python -m playwright install chromium
+   pnpm test:e2e
+
+9. Valide em homologação: login, Dashboard, Kanban, Mover, Pedidos, abertura de OS,
+   miniaturas, agenda, Configurações, ZIP de miniaturas, PWA e modo offline somente leitura.
+10. Depois da homologação, execute o mesmo SQL no Supabase de PRODUÇÃO.
+11. Faça commit e push para a branch main:
+
+   git add -A
+   git commit -m "Publicolor 3.1.0: arquitetura, mobile, realtime e observabilidade"
+   git push
+
+12. Confirme na Vercel que o projeto oficial usa:
+
+   Repositório: alissondiego62-dot/PCP-PUBLICOLOR
+   Branch: main
+   Root Directory: .
+   Domínio: https://pcp-publicolor.vercel.app
+
+13. Abra Configurações e confira versão 3.1.0, ambiente production e o commit atual.
+14. Atualize o navegador com Ctrl + Shift + R. No celular, feche e reabra o aplicativo.
+
+NÃO execute os SQLs antigos da pasta docs/archive. Eles estão guardados apenas como histórico.

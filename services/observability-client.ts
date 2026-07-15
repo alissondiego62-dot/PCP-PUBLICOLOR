@@ -9,6 +9,7 @@ type ClientEvent = {
   message: string;
   orderId?: string | null;
   metadata?: Record<string, unknown>;
+  correlationId?: string;
 };
 
 const SECRET_PATTERN = /(token|secret|password|authorization|apikey|api_key)/i;
@@ -39,7 +40,7 @@ export async function reportClientEvent(event: ClientEvent) {
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ ...event, metadata: sanitize(event.metadata || {}) }),
+      body: JSON.stringify({ ...event, correlationId: event.correlationId || crypto.randomUUID(), route: window.location.pathname, metadata: sanitize(event.metadata || {}) }),
     });
   } catch {
     // Telemetria nunca deve interromper o fluxo principal.

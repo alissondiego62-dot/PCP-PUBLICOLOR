@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Order, PurchaseActivityStatus, Sector, ViewKey } from "@/lib/pcp-types";
 import { dueLabel } from "@/lib/pcp-formatters";
 import { supabase } from "@/lib/supabase";
 import type { KanbanMetricKey } from "@/features/kanban/KanbanView";
+import { AppIcon } from "@/components/ui/AppIcon";
 
 type DashboardViewProps = {
   activeOrderCounts: { orders: number; suborders: number };
@@ -20,60 +21,52 @@ type DashboardViewProps = {
   onOpenOrder: (order: Order, tab: "installation" | "history" | "materials") => void;
 };
 
-type PurchaseDashboardRow = {
-  id: string;
-  activity_status: PurchaseActivityStatus;
-  due_at: string | null;
-  completed: boolean;
-  order_id: string | null;
+type DashboardSummary = {
+  unavailable_order_count: number;
+  unavailable_material_count: number;
+  open_purchase_count: number;
+  purchase_overdue_count: number;
+  purchase_due_24h_count: number;
+  missing_price_count: number;
+  estimated_open_purchase_total: number;
+  created_last_7d: number;
+  completed_last_7d: number;
+  installation_overdue_count: number;
+  purchases_by_status: Partial<Record<PurchaseActivityStatus, number>>;
 };
 
-type MaterialDashboardRow = {
-  id: string;
-  availability: "available" | "unavailable";
-  purchase_status: PurchaseActivityStatus | null;
-  quantity: number;
-  unit_price: number | null;
-};
+type HistoryDashboardRow = { id: number; order_id: string; action_type: string; description: string; created_at: string };
 
-type HistoryDashboardRow = {
-  id: number;
-  order_id: string;
-  action_type: string;
-  description: string;
-  created_at: string;
+const EMPTY_SUMMARY: DashboardSummary = {
+  unavailable_order_count: 0,
+  unavailable_material_count: 0,
+  open_purchase_count: 0,
+  purchase_overdue_count: 0,
+  purchase_due_24h_count: 0,
+  missing_price_count: 0,
+  estimated_open_purchase_total: 0,
+  created_last_7d: 0,
+  completed_last_7d: 0,
+  installation_overdue_count: 0,
+  purchases_by_status: {},
 };
-
-type DashboardOperations = {
-  purchases: PurchaseDashboardRow[];
-  materials: MaterialDashboardRow[];
-  history: HistoryDashboardRow[];
-  loading: boolean;
-  schemaPending: boolean;
-  error: string;
-};
-
 const currency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
-function localDateKey(value: Date | string) {
+function dateKeyManaus(value: Date | string) {
   const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return "";
-  const offset = date.getTimezoneOffset();
-  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Manaus", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
-
-function statusLabel(status: PurchaseActivityStatus) {
+function purchaseStatusLabel(status: PurchaseActivityStatus) {
   if (status === "awaiting_quote") return "Aguardando orçamento";
   if (status === "awaiting_separation") return "Aguardando separação";
   if (status === "awaiting_delivery") return "Aguardando entrega";
   if (status === "finalized") return "Finalizada";
   return "Pendente";
 }
-
 function relativeTime(value: string) {
-  const time = new Date(value).getTime();
-  if (!Number.isFinite(time)) return "";
-  const minutes = Math.max(0, Math.round((Date.now() - time) / 60_000));
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60_000));
+  if (!Number.isFinite(minutes)) return "";
   if (minutes < 1) return "agora";
   if (minutes < 60) return `há ${minutes} min`;
   const hours = Math.round(minutes / 60);
@@ -81,193 +74,133 @@ function relativeTime(value: string) {
   const days = Math.round(hours / 24);
   return `há ${days} dia${days === 1 ? "" : "s"}`;
 }
+function orderAgeHours(order: Order) {
+  const source = order.sector_entered_at || order.updated_at || order.created_at;
+  const time = new Date(source).getTime();
+  return Number.isFinite(time) ? Math.max(0, (Date.now() - time) / 3_600_000) : 0;
+}
 
 export function DashboardView(props: DashboardViewProps) {
-  const {
-    activeOrderCounts,
-    activeOrders,
-    completedOrders,
-    installationOrders,
-    sectorReport,
-    largestSectorCount,
-    currentUserId,
-    isOnline,
-    onNavigate,
-    onApplyKanbanMetric,
-    onOpenOrder,
-  } = props;
+  const { activeOrderCounts, activeOrders, completedOrders, installationOrders, sectorReport, largestSectorCount, currentUserId, isOnline, onNavigate, onApplyKanbanMetric, onOpenOrder } = props;
+  const [summary, setSummary] = useState<DashboardSummary>(EMPTY_SUMMARY);
+  const [history, setHistory] = useState<HistoryDashboardRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [schemaPending, setSchemaPending] = useState(false);
+  const [error, setError] = useState("");
 
-  const [operations, setOperations] = useState<DashboardOperations>({
-    purchases: [],
-    materials: [],
-    history: [],
-    loading: true,
-    schemaPending: false,
-    error: "",
-  });
+  const loadSummary = useCallback(async () => {
+    if (!isOnline) { setLoading(false); return; }
+    setLoading(true);
+    const [summaryResult, historyResult] = await Promise.all([
+      supabase.rpc("get_dashboard_operational_summary"),
+      supabase.from("order_history").select("id,order_id,action_type,description,created_at").order("created_at", { ascending: false }).limit(8),
+    ]);
+    if (summaryResult.error) {
+      setSchemaPending(["42883", "PGRST202", "PGRST205"].includes(summaryResult.error.code || ""));
+      setError(["42883", "PGRST202", "PGRST205"].includes(summaryResult.error.code || "") ? "" : summaryResult.error.message);
+    } else {
+      const row = (Array.isArray(summaryResult.data) ? summaryResult.data[0] : summaryResult.data) as DashboardSummary | null;
+      setSummary({ ...EMPTY_SUMMARY, ...(row || {}) });
+      setSchemaPending(false);
+      setError("");
+    }
+    if (!historyResult.error) setHistory((historyResult.data || []) as HistoryDashboardRow[]);
+    setLoading(false);
+  }, [isOnline]);
 
+  useEffect(() => { void loadSummary(); }, [loadSummary]);
   useEffect(() => {
-    let active = true;
-    if (!isOnline) {
-      setOperations((current) => ({ ...current, loading: false, error: "Modo offline: indicadores de compras usam a última informação carregada." }));
-      return () => { active = false; };
-    }
-
-    async function loadOperationalSummary() {
-      setOperations((current) => ({ ...current, loading: true, error: "" }));
-      const [purchaseResult, materialResult, historyResult] = await Promise.all([
-        supabase
-          .from("activities")
-          .select("id,activity_status,due_at,completed,order_id")
-          .in("activity_type", ["material_purchase", "purchase_order"]),
-        supabase
-          .from("order_materials")
-          .select("id,availability,purchase_status,quantity,unit_price"),
-        supabase
-          .from("order_history")
-          .select("id,order_id,action_type,description,created_at")
-          .order("created_at", { ascending: false })
-          .limit(8),
-      ]);
-      if (!active) return;
-
-      const mainError = purchaseResult.error || materialResult.error;
-      const missingSchema = Boolean(mainError && ["42703", "PGRST204", "PGRST205"].includes(mainError.code || ""));
-      setOperations({
-        purchases: mainError ? [] : (purchaseResult.data || []) as PurchaseDashboardRow[],
-        materials: mainError ? [] : (materialResult.data || []) as MaterialDashboardRow[],
-        history: historyResult.error ? [] : (historyResult.data || []) as HistoryDashboardRow[],
-        loading: false,
-        schemaPending: missingSchema,
-        error: mainError && !missingSchema ? mainError.message : historyResult.error?.message || "",
-      });
-    }
-
-    void loadOperationalSummary();
-    const channel = supabase
-      .channel(`dashboard-operations-${currentUserId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, () => void loadOperationalSummary())
-      .on("postgres_changes", { event: "*", schema: "public", table: "order_materials" }, () => void loadOperationalSummary())
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "order_history" }, () => void loadOperationalSummary())
+    if (!isOnline) return;
+    const channel = supabase.channel(`dashboard-summary-${currentUserId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "dashboard_refresh_events" }, () => void loadSummary())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "order_history" }, () => void loadSummary())
       .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [currentUserId, isOnline, loadSummary]);
 
-    return () => {
-      active = false;
-      void supabase.removeChannel(channel);
-    };
-  }, [currentUserId, isOnline]);
-
-  const today = localDateKey(new Date());
+  const today = dateKeyManaus(new Date());
   const operational = useMemo(() => {
     const late = activeOrders.filter((order) => dueLabel(order.delivery_date).startsWith("Atrasado"));
     const productionToday = activeOrders.filter((order) => dueLabel(order.delivery_date) === "Prazo hoje");
     const inProgress = activeOrders.filter((order) => order.status === "in_progress");
     const blocked = activeOrders.filter((order) => order.blocked || order.status === "paused");
     const withoutResponsible = activeOrders.filter((order) => !order.consultant_name?.trim());
-    const installationToday = installationOrders.filter((order) => order.installation_scheduled_at && localDateKey(order.installation_scheduled_at) === today);
-    const waitingMaterials = operations.materials.filter((material) => material.availability === "unavailable");
-    const openPurchaseItems = operations.purchases.filter((activity) => !activity.completed && activity.activity_status !== "finalized");
-    const purchaseStatusCounts = openPurchaseItems.reduce<Record<string, number>>((result, activity) => {
-      result[activity.activity_status] = (result[activity.activity_status] || 0) + 1;
-      return result;
-    }, {});
-    const estimatedPurchaseTotal = operations.materials.reduce((total, material) => {
-      const quantity = Number(material.quantity);
-      const price = material.unit_price == null ? Number.NaN : Number(material.unit_price);
-      return Number.isFinite(quantity) && Number.isFinite(price) ? total + quantity * price : total;
-    }, 0);
-    const withoutPrice = operations.materials.filter((material) => material.availability === "unavailable" && material.unit_price == null).length;
-    const purchasesDue24h = openPurchaseItems.filter((activity) => {
-      if (!activity.due_at) return false;
-      const due = new Date(activity.due_at).getTime();
-      return Number.isFinite(due) && due <= Date.now() + 24 * 60 * 60 * 1000;
-    }).length;
-    return {
-      late,
-      productionToday,
-      inProgress,
-      blocked,
-      withoutResponsible,
-      installationToday,
-      waitingMaterials,
-      openPurchaseItems,
-      purchaseStatusCounts,
-      estimatedPurchaseTotal,
-      withoutPrice,
-      purchasesDue24h,
-    };
-  }, [activeOrders, installationOrders, operations.materials, operations.purchases, today]);
+    const withoutMovement = activeOrders.filter((order) => orderAgeHours(order) >= 48);
+    const installationToday = installationOrders.filter((order) => order.installation_scheduled_at && dateKeyManaus(order.installation_scheduled_at) === today);
+    const futureInstallations = installationOrders.filter((order) => order.installation_scheduled_at && dateKeyManaus(order.installation_scheduled_at) >= today).slice(0, 6);
+    const pastInstallations = installationOrders.filter((order) => order.installation_scheduled_at && dateKeyManaus(order.installation_scheduled_at) < today && order.installation_status !== "completed");
+    return { late, productionToday, inProgress, blocked, withoutResponsible, withoutMovement, installationToday, futureInstallations, pastInstallations };
+  }, [activeOrders, installationOrders, today]);
+
+  const fallbackSummary = useMemo<DashboardSummary>(() => ({
+    ...EMPTY_SUMMARY,
+    created_last_7d: activeOrders.filter((order) => new Date(order.created_at).getTime() >= Date.now() - 7 * 86400000).length,
+    completed_last_7d: completedOrders.filter((order) => order.completed_at && new Date(order.completed_at).getTime() >= Date.now() - 7 * 86400000).length,
+    installation_overdue_count: operational.pastInstallations.length,
+  }), [activeOrders, completedOrders, operational.pastInstallations.length]);
+  const metrics = schemaPending ? fallbackSummary : summary;
+  const orderById = useMemo(() => new Map([...activeOrders, ...completedOrders].map((order) => [order.id, order])), [activeOrders, completedOrders]);
+  const throughputDelta = metrics.created_last_7d ? Math.round((metrics.completed_last_7d / metrics.created_last_7d) * 100) : 0;
 
   const priorityRows = [
     { label: "Pedidos atrasados", value: operational.late.length, tone: "danger", action: () => onApplyKanbanMetric("late") },
     { label: "Produção com prazo hoje", value: operational.productionToday.length, tone: "warning", action: () => onApplyKanbanMetric("today") },
-    { label: "Compras vencendo em 24h", value: operational.purchasesDue24h, tone: "warning", action: () => onNavigate("activities") },
-    { label: "Pedidos bloqueados/pausados", value: operational.blocked.length, tone: "danger", action: () => onApplyKanbanMetric("blocked") },
-    { label: "Pedidos sem responsável", value: operational.withoutResponsible.length, tone: "neutral", action: () => onNavigate("orders") },
+    { label: "Compras vencidas", value: metrics.purchase_overdue_count, tone: "danger", action: () => onNavigate("activities") },
+    { label: "Compras vencendo em 24h", value: metrics.purchase_due_24h_count, tone: "warning", action: () => onNavigate("activities") },
+    { label: "Sem movimentação há 48h", value: operational.withoutMovement.length, tone: "neutral", action: () => onNavigate("orders") },
+    { label: "Instalações atrasadas", value: metrics.installation_overdue_count, tone: "danger", action: () => onNavigate("installation") },
   ];
 
-  const orderById = useMemo(() => new Map([...activeOrders, ...completedOrders].map((order) => [order.id, order])), [activeOrders, completedOrders]);
-
-  return <section className="v32-dashboard">
-    <div className="v32-dashboard-hero">
-      <div>
-        <span>PUBLICOLOR PCP · PAINEL OPERACIONAL</span>
-        <h2>O que exige atenção agora</h2>
-        <p>Produção, compras, prazos e instalações em uma visão única. Os cartões levam diretamente ao ponto de trabalho.</p>
-      </div>
-      <div className="v32-dashboard-health" data-online={isOnline ? "true" : "false"}>
-        <i>{isOnline ? "●" : "○"}</i>
-        <span><b>{isOnline ? "Sistema conectado" : "Modo offline"}</b><small>Atualização em tempo real {isOnline ? "ativa" : "indisponível"}</small></span>
-      </div>
+  return <section className="v34-dashboard">
+    <div className="v34-dashboard-hero">
+      <div><span>PUBLICOLOR PCP · CONTROLE OPERACIONAL</span><h2>Prioridades, capacidade e compras</h2><p>O Dashboard concentra os indicadores que antes dependiam de relatórios separados.</p></div>
+      <div className="v34-hero-actions"><button onClick={() => void loadSummary()} disabled={loading}><AppIcon name="refresh"/>Atualizar</button><div data-online={isOnline}><i>{isOnline ? "●" : "○"}</i><span><b>{isOnline ? "Conectado" : "Offline"}</b><small>{loading ? "Atualizando indicadores…" : "Resumo operacional"}</small></span></div></div>
     </div>
 
-    <div className="v32-kpi-grid" aria-label="Indicadores operacionais">
-      <button type="button" onClick={() => onApplyKanbanMetric("active")}><i>▦</i><span><small>Pedidos ativos</small><strong>{activeOrderCounts.orders}</strong><em>{activeOrderCounts.suborders} subpedidos</em></span></button>
-      <button type="button" onClick={() => onApplyKanbanMetric("in_progress")}><i>↗</i><span><small>Em produção</small><strong>{operational.inProgress.length}</strong><em>Trabalho em andamento</em></span></button>
-      <button type="button" className="warning" onClick={() => onNavigate("activities")}><i>◇</i><span><small>Aguardando materiais</small><strong>{operational.waitingMaterials.length}</strong><em>{operational.openPurchaseItems.length} atividades abertas</em></span></button>
-      <button type="button" className="danger" onClick={() => onApplyKanbanMetric("late")}><i>!</i><span><small>Atrasados</small><strong>{operational.late.length}</strong><em>Prazo anterior a hoje</em></span></button>
-      <button type="button" onClick={() => onApplyKanbanMetric("today")}><i>⌑</i><span><small>Produção hoje</small><strong>{operational.productionToday.length}</strong><em>Prazo do dia</em></span></button>
-      <button type="button" onClick={() => onApplyKanbanMetric("installation_today")}><i>◉</i><span><small>Instalações hoje</small><strong>{operational.installationToday.length}</strong><em>Compromissos do dia</em></span></button>
-      <button type="button" className="danger" onClick={() => onApplyKanbanMetric("blocked")}><i>Ⅱ</i><span><small>Bloqueados/pausados</small><strong>{operational.blocked.length}</strong><em>Exigem intervenção</em></span></button>
+    <div className="v34-kpi-grid">
+      <Kpi icon="kanban" label="Pedidos ativos" value={activeOrderCounts.orders} detail={`${activeOrderCounts.suborders} subpedidos`} onClick={() => onApplyKanbanMetric("active")} />
+      <Kpi icon="orders" label="Em produção" value={operational.inProgress.length} detail="Trabalho em andamento" onClick={() => onApplyKanbanMetric("in_progress")} />
+      <Kpi icon="tasks" tone="warning" label="OS aguardando materiais" value={metrics.unavailable_order_count} detail={`${metrics.unavailable_material_count} itens indisponíveis`} onClick={() => onNavigate("activities")} />
+      <Kpi icon="alert" tone="danger" label="Atrasados" value={operational.late.length} detail="Prazo de produção vencido" onClick={() => onApplyKanbanMetric("late")} />
+      <Kpi icon="calendar" tone="warning" label="Produção hoje" value={operational.productionToday.length} detail="Prazo interno do dia" onClick={() => onApplyKanbanMetric("today")} />
+      <Kpi icon="calendar" label="Instalações hoje" value={operational.installationToday.length} detail="Entrega ou instalação" onClick={() => onNavigate("installation")} />
+      <Kpi icon="alert" tone="danger" label="Bloqueados/pausados" value={operational.blocked.length} detail="Exigem intervenção" onClick={() => onApplyKanbanMetric("blocked")} />
     </div>
 
-    {operations.schemaPending && <div className="v32-dashboard-alert">O banco conectado ainda não possui todas as colunas do módulo de Compras. Execute o SQL cumulativo da versão 3.2.0 para ativar os indicadores completos.</div>}
-    {operations.error && !operations.schemaPending && <div className="v32-dashboard-alert">Alguns indicadores não puderam ser atualizados: {operations.error}</div>}
+    {(schemaPending || error) && <div className="v34-dashboard-alert">{schemaPending ? "Aplique o SQL 3.4.0 para ativar o resumo otimizado do Dashboard. Os indicadores locais continuam disponíveis." : error}</div>}
 
-    <div className="v32-dashboard-layout">
-      <article className="v32-panel v32-priority-panel">
-        <header><div><span>PRIORIDADES</span><h3>Fila de atenção</h3></div><button type="button" onClick={() => onNavigate("kanban")}>Abrir produção</button></header>
-        <div className="v32-priority-list">
-          {priorityRows.map((row) => <button type="button" key={row.label} data-tone={row.tone} onClick={row.action}><span>{row.label}</span><strong>{row.value}</strong><i>›</i></button>)}
-        </div>
+    <div className="v34-dashboard-grid">
+      <article className="v34-panel priority"><PanelHeader eyebrow="AÇÃO IMEDIATA" title="Pendências prioritárias" action="Abrir produção" onClick={() => onNavigate("kanban")} />
+        <div className="v34-priority-list">{priorityRows.map((item) => <button key={item.label} data-tone={item.tone} onClick={item.action}><span>{item.label}</span><strong>{item.value}</strong><AppIcon name="chevronRight"/></button>)}</div>
       </article>
 
-      <article className="v32-panel v32-purchases-panel">
-        <header><div><span>COMPRAS</span><h3>Materiais e cotações</h3></div><button type="button" onClick={() => onNavigate("activities")}>Abrir compras</button></header>
-        <div className="v32-purchase-total"><span><small>Total estimado</small><strong>{currency.format(operational.estimatedPurchaseTotal)}</strong></span><em>{operational.withoutPrice} item(ns) sem preço</em></div>
-        <div className="v32-purchase-statuses">
-          {(["pending", "awaiting_quote", "awaiting_separation", "awaiting_delivery"] as PurchaseActivityStatus[]).map((status) => <button type="button" key={status} onClick={() => onNavigate("activities")}><span>{statusLabel(status)}</span><strong>{operational.purchaseStatusCounts[status] || 0}</strong></button>)}
-        </div>
-        {operations.loading && <small className="v32-loading-note">Atualizando compras…</small>}
+      <article className="v34-panel purchases"><PanelHeader eyebrow="COMPRAS" title="Materiais e valores" action="Abrir compras" onClick={() => onNavigate("activities")} />
+        <div className="v34-purchase-total"><span><small>Total parcial em aberto</small><strong>{currency.format(metrics.estimated_open_purchase_total || 0)}</strong></span><em>{metrics.missing_price_count} sem preço</em></div>
+        <div className="v34-purchase-statuses">{(["pending", "awaiting_quote", "awaiting_separation", "awaiting_delivery"] as PurchaseActivityStatus[]).map((status) => <button key={status} onClick={() => onNavigate("activities")}><span>{purchaseStatusLabel(status)}</span><strong>{metrics.purchases_by_status?.[status] || 0}</strong></button>)}</div>
       </article>
 
-      <article className="v32-panel v32-sector-panel">
-        <header><div><span>CAPACIDADE</span><h3>Pedidos por setor</h3></div><button type="button" onClick={() => onNavigate("kanban")}>Abrir Kanban</button></header>
-        <div className="v32-sector-list">{sectorReport.map((item) => <button type="button" key={item.sector.id} onClick={() => onNavigate("kanban")}><label><span>{item.sector.name}</span><b>{item.count}</b></label><div><i style={{ width: `${(item.count / largestSectorCount) * 100}%` }} /></div></button>)}</div>
+      <article className="v34-panel throughput"><PanelHeader eyebrow="ÚLTIMOS 7 DIAS" title="Fluxo de entrada e saída" />
+        <div className="v34-throughput"><div><small>Novas OS</small><strong>{metrics.created_last_7d}</strong></div><div><small>Concluídas</small><strong>{metrics.completed_last_7d}</strong></div><div><small>Relação saída/entrada</small><strong>{throughputDelta}%</strong></div></div>
       </article>
 
-      <article className="v32-panel v32-install-panel">
-        <header><div><span>AGENDA</span><h3>Próximas instalações/entregas</h3></div><button type="button" onClick={() => onNavigate("installation")}>Ver agenda</button></header>
-        <div className="v32-install-list">{installationOrders.filter((order) => order.installation_scheduled_at).slice(0, 5).map((order) => <button type="button" key={order.id} onClick={() => onOpenOrder(order, "installation")}><time>{new Date(order.installation_scheduled_at!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", timeZone: "America/Manaus" })}<small>{order.installation_time_confirmed ? new Date(order.installation_scheduled_at!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Manaus" }) : "Horário a definir"}</small></time><span><b>OP {order.op_number}</b><small>{order.client_name}</small></span><i>›</i></button>)}{!installationOrders.some((order) => order.installation_scheduled_at) && <div className="view-empty">Nenhuma instalação ou entrega programada.</div>}</div>
+      <article className="v34-panel sectors"><PanelHeader eyebrow="CAPACIDADE" title="Carga por setor" action="Abrir Kanban" onClick={() => onNavigate("kanban")} />
+        <div className="v34-sector-list">{sectorReport.map((item) => { const wip = item.count; const capacity = item.sector.wip_limit || Math.max(1, largestSectorCount); const pressure = Math.min(1, wip / capacity); return <button key={item.sector.id} onClick={() => onNavigate("kanban")}><label><span>{item.sector.name}</span><b>{wip}{item.sector.wip_limit ? `/${item.sector.wip_limit}` : ""}</b></label><div><i data-pressure={pressure >= .8 ? "high" : pressure >= .55 ? "medium" : "normal"} style={{ width: `${pressure * 100}%` }}/></div></button>; })}</div>
       </article>
 
-      <article className="v32-panel v32-history-panel">
-        <header><div><span>ATUALIZAÇÕES</span><h3>Movimentações recentes</h3></div><button type="button" onClick={() => onNavigate("orders")}>Ver pedidos</button></header>
-        <div className="v32-history-list">{operations.history.map((entry) => {
-          const order = orderById.get(entry.order_id);
-          return <button type="button" key={entry.id} onClick={() => order && onOpenOrder(order, "history")} disabled={!order}><i>•</i><span><b>{order ? `OP ${order.op_number}` : "Registro operacional"}</b><small>{entry.description}</small></span><time>{relativeTime(entry.created_at)}</time></button>;
-        })}{!operations.history.length && <div className="view-empty">Nenhuma movimentação recente disponível.</div>}</div>
+      <article className="v34-panel agenda"><PanelHeader eyebrow="AGENDA" title="Próximas instalações/entregas" action="Ver agenda" onClick={() => onNavigate("installation")} />
+        <div className="v34-agenda-list">{operational.futureInstallations.map((order) => <button key={order.id} onClick={() => onOpenOrder(order, "installation")}><time>{new Date(order.installation_scheduled_at!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", timeZone: "America/Manaus" })}<small>{order.installation_time_confirmed ? new Date(order.installation_scheduled_at!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Manaus" }) : "Horário a definir"}</small></time><span><b>OP {order.op_number}</b><small>{order.client_name}</small></span><AppIcon name="chevronRight"/></button>)}{!operational.futureInstallations.length && <div className="view-empty">Nenhuma instalação futura.</div>}</div>
+      </article>
+
+      <article className="v34-panel history"><PanelHeader eyebrow="AUDITORIA" title="Movimentações recentes" action="Ver pedidos" onClick={() => onNavigate("orders")} />
+        <div className="v34-history-list">{history.map((entry) => { const order = orderById.get(entry.order_id); return <button key={entry.id} disabled={!order} onClick={() => order && onOpenOrder(order, "history")}><i>•</i><span><b>{order ? `OP ${order.op_number}` : "Registro operacional"}</b><small>{entry.description}</small></span><time>{relativeTime(entry.created_at)}</time></button>; })}{!history.length && <div className="view-empty">Nenhuma movimentação recente.</div>}</div>
       </article>
     </div>
   </section>;
+}
+
+function Kpi({ icon, label, value, detail, tone = "neutral", onClick }: { icon: Parameters<typeof AppIcon>[0]["name"]; label: string; value: number; detail: string; tone?: string; onClick: () => void }) {
+  return <button className="v34-kpi" data-tone={tone} onClick={onClick}><i><AppIcon name={icon}/></i><span><small>{label}</small><strong>{value}</strong><em>{detail}</em></span></button>;
+}
+function PanelHeader({ eyebrow, title, action, onClick }: { eyebrow: string; title: string; action?: string; onClick?: () => void }) {
+  return <header><div><span>{eyebrow}</span><h3>{title}</h3></div>{action && <button onClick={onClick}>{action}</button>}</header>;
 }

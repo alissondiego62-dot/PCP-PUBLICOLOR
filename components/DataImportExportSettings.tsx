@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { installationDateToIso, previousBusinessDay } from "@/lib/pcp-formatters";
 import type { Client, DbStatus, InstallationStatus, Order, Priority, Sector } from "@/lib/pcp-types";
@@ -18,8 +18,6 @@ type ImportReport = {
 };
 
 type Props = {
-  orders: Order[];
-  clients: Client[];
   sectors: Sector[];
   onImportComplete: () => void;
 };
@@ -438,8 +436,12 @@ function reportMessage(report: ImportReport) {
   return `${report.created} criado(s), ${report.updated} atualizado(s), ${report.skipped} ignorado(s)${report.errors.length ? ` e ${report.errors.length} erro(s)` : ""}.`;
 }
 
-export function DataImportExportSettings({ orders, clients, sectors, onImportComplete }: Props) {
+export function DataImportExportSettings({ sectors, onImportComplete }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [baseLoading, setBaseLoading] = useState(true);
+  const [baseError, setBaseError] = useState("");
   const [dataset, setDataset] = useState<Dataset>("orders");
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [fileName, setFileName] = useState("");
@@ -449,6 +451,28 @@ export function DataImportExportSettings({ orders, clients, sectors, onImportCom
   const [createMissingClients, setCreateMissingClients] = useState(true);
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<ImportReport | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadBase = async () => {
+      setBaseLoading(true);
+      setBaseError("");
+      const [ordersResult, clientsResult] = await Promise.all([
+        supabase.from("orders").select("id,op_number,client_id,client_name,description,delivery_date,priority,sector_id,status,responsible_user_id,consultant_name,main_image_path,blocked,completed_at,installation_scheduled_at,installation_address,installation_team,installation_vehicle,installation_status,installation_notes,installation_completed_at,installation_time_confirmed,materials,notes,created_at,updated_at,sector_entered_at").order("created_at", { ascending: false }).limit(5000),
+        supabase.from("clients").select("*").order("name").limit(5000),
+      ]);
+      if (!active) return;
+      const loadError = ordersResult.error || clientsResult.error;
+      if (loadError) setBaseError(`Não foi possível carregar a base para transferência: ${loadError.message}`);
+      else {
+        setOrders((ordersResult.data || []) as Order[]);
+        setClients((clientsResult.data || []) as Client[]);
+      }
+      setBaseLoading(false);
+    };
+    void loadBase();
+    return () => { active = false; };
+  }, []);
 
   const previewColumns = useMemo(() => {
     if (!rows.length) return [];
@@ -742,17 +766,20 @@ export function DataImportExportSettings({ orders, clients, sectors, onImportCom
         <span>Somente administrador</span>
       </header>
 
-      <div className="data-export-grid">
+      {baseLoading && <div className="settings-security-note">Carregando pedidos e clientes somente para esta aba…</div>}
+      {baseError && <div className="data-import-error">{baseError}</div>}
+
+      <div className="data-export-grid" aria-busy={baseLoading}>
         <article className="data-export-card">
           <div className="data-export-card-title"><i>▤</i><div><small>BASE DE CLIENTES</small><b>{clients.length} cadastro(s)</b></div></div>
           <p>Inclui dados cadastrais, contatos, endereço, observações e situação do cliente.</p>
-          <div className="data-transfer-actions"><button type="button" onClick={() => exportData("clients", "csv")}>Exportar CSV</button><button type="button" onClick={() => exportData("clients", "xml")}>Exportar XML</button></div>
+          <div className="data-transfer-actions"><button type="button" onClick={() => exportData("clients", "csv")} disabled={baseLoading || Boolean(baseError)}>Exportar CSV</button><button type="button" onClick={() => exportData("clients", "xml")} disabled={baseLoading || Boolean(baseError)}>Exportar XML</button></div>
           <div className="data-template-actions"><span>Modelos para preenchimento:</span><button type="button" onClick={() => exportData("clients", "csv", true)}>CSV</button><button type="button" onClick={() => exportData("clients", "xml", true)}>XML</button></div>
         </article>
         <article className="data-export-card">
           <div className="data-export-card-title"><i>▦</i><div><small>PEDIDOS E SUBPEDIDOS</small><b>{orders.length} registro(s)</b></div></div>
           <p>Cada pedido ou subpedido é exportado em uma linha, com cliente, setor, responsável, datas e informações de produção.</p>
-          <div className="data-transfer-actions"><button type="button" onClick={() => exportData("orders", "csv")}>Exportar CSV</button><button type="button" onClick={() => exportData("orders", "xml")}>Exportar XML</button></div>
+          <div className="data-transfer-actions"><button type="button" onClick={() => exportData("orders", "csv")} disabled={baseLoading || Boolean(baseError)}>Exportar CSV</button><button type="button" onClick={() => exportData("orders", "xml")} disabled={baseLoading || Boolean(baseError)}>Exportar XML</button></div>
           <div className="data-template-actions"><span>Modelos para preenchimento:</span><button type="button" onClick={() => exportData("orders", "csv", true)}>CSV</button><button type="button" onClick={() => exportData("orders", "xml", true)}>XML</button></div>
         </article>
       </div>

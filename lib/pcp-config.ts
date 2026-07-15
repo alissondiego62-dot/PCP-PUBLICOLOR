@@ -1,4 +1,5 @@
 import type { AppRole, Priority, UiStatus, DbStatus, ViewKey } from "@/lib/pcp-types";
+import type { AppIconName } from "@/components/ui/AppIcon";
 
 export const priorityLabel: Record<Priority, string> = {
   low: "Baixa",
@@ -34,23 +35,23 @@ export function statusDotClass(status: UiStatus) {
 
 export const roleLabel: Record<AppRole, string> = {
   admin: "Administrador",
-  manager: "Operador",
-  production: "Operador",
-  viewer: "Usuário",
+  manager: "Gerente",
+  production: "Produção",
+  viewer: "Visualizador",
 };
 
 export const menuItems: Array<{
   key: Exclude<ViewKey, "settings" | "users">;
-  icon: string;
+  icon: AppIconName;
   label: string;
 }> = [
-  { key: "dashboard", icon: "◫", label: "Dashboard" },
-  { key: "kanban", icon: "▦", label: "Produção · Kanban" },
-  { key: "orders", icon: "▤", label: "Pedidos" },
-  { key: "completed", icon: "✓", label: "Concluídos" },
-  { key: "installation", icon: "◷", label: "Agenda de instalação/entrega" },
-  { key: "activities", icon: "☑", label: "Atividades e Compras" },
-  { key: "clients", icon: "◉", label: "Clientes" },
+  { key: "dashboard", icon: "dashboard", label: "Dashboard" },
+  { key: "kanban", icon: "kanban", label: "Produção · Kanban" },
+  { key: "orders", icon: "orders", label: "Pedidos" },
+  { key: "completed", icon: "completed", label: "Concluídos" },
+  { key: "installation", icon: "calendar", label: "Agenda de instalação/entrega" },
+  { key: "activities", icon: "tasks", label: "Atividades e Compras" },
+  { key: "clients", icon: "clients", label: "Clientes" },
 ];
 
 

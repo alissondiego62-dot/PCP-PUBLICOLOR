@@ -10,6 +10,9 @@ type SystemEventInput = {
   orderId?: string | null;
   durationMs?: number | null;
   metadata?: Record<string, unknown>;
+  correlationId?: string;
+  route?: string;
+  attempt?: number;
   actor?: AuthorizedAppUser | null;
 };
 
@@ -43,6 +46,9 @@ export async function logSystemEvent(input: SystemEventInput) {
       user_id: input.actor?.user.id || null,
       actor_email: input.actor?.email || null,
       duration_ms: input.durationMs ?? null,
+      correlation_id: input.correlationId || null,
+      route: input.route || null,
+      attempt: input.attempt ?? null,
       metadata: sanitize(input.metadata || {}),
     });
   } catch (error) {

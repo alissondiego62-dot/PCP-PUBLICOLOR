@@ -1,7 +1,7 @@
 {
   "name": "Publicolor PCP",
   "short_name": "Publicolor",
-  "description": "PCP da Publicolor com Kanban móvel, agenda, pedidos e leitura offline controlada.",
+  "description": "PCP da Publicolor com Kanban móvel, agenda, pedidos e dashboard operacional, compras, agenda, páginas independentes, integrações monitoradas e leitura offline controlada.",
   "start_url": "/dashboard?source=pwa",
   "scope": "/",
   "display": "standalone",

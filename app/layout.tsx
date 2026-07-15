@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./design-system.css";
 import "./supabase.css";
 import "./details.css";
 import "./search.css";
@@ -21,6 +22,7 @@ import "./responsive.css";
 import "@/features/kanban/kanban-indicators.css";
 import "@/features/dashboard/dashboard-3-2.css";
 import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
+import { PwaUpdatePrompt } from "@/components/PwaUpdatePrompt";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -58,7 +60,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR">
-      <body>{children}<PwaInstallPrompt /></body>
+      <body>{children}<PwaInstallPrompt /><PwaUpdatePrompt /></body>
     </html>
   );
 }

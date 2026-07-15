@@ -13,6 +13,8 @@ export async function POST(request: Request) {
       message?: string;
       orderId?: string | null;
       metadata?: Record<string, unknown>;
+      correlationId?: string;
+      route?: string;
     };
 
     if (!body.source || !body.action || !body.message) {
@@ -27,10 +29,12 @@ export async function POST(request: Request) {
       message: body.message,
       orderId: body.orderId,
       metadata: body.metadata,
+      correlationId: body.correlationId,
+      route: body.route,
       actor,
     });
 
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, correlation_id: body.correlationId || null }, { headers: body.correlationId ? { "x-correlation-id": body.correlationId } : undefined });
   } catch (error) {
     return responseMessage(error);
   }

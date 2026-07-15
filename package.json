@@ -1,6 +1,6 @@
 {
   "name": "controle-pedidos-kanban",
-  "version": "3.2.0",
+  "version": "3.4.0",
   "private": true,
   "engines": {
     "node": "24.x"
@@ -13,10 +13,11 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
     "check": "pnpm typecheck && pnpm lint",
-    "validate": "pnpm typecheck && pnpm lint && pnpm build",
+    "validate": "pnpm validate:release && pnpm typecheck && pnpm lint && pnpm build",
     "test:e2e": "python scripts/responsive_e2e.py",
     "test:e2e:install": "python -m playwright install chromium",
-    "validate:environment": "node scripts/validate-environment.mjs"
+    "validate:environment": "node scripts/validate-environment.mjs",
+    "validate:release": "node scripts/validate-release-3.4.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",

@@ -103,6 +103,8 @@ function pendingMatch(
 }
 
 export async function POST(request: Request) {
+  let jobId: string | null = null;
+  let jobAdmin: ReturnType<typeof getSupabaseAdmin> | null = null;
   try {
     const actor = await requireAppUser(request);
     const body = await request.json() as { order_id?: string };
@@ -110,12 +112,25 @@ export async function POST(request: Request) {
     if (!orderId) return Response.json({ error: "Pedido inválido." }, { status: 400 });
 
     const admin = getSupabaseAdmin();
+    jobAdmin = admin;
     const { data: order, error: orderError } = await admin
       .from("orders")
       .select("id,op_number,client_name")
       .eq("id", orderId)
       .maybeSingle();
     if (orderError || !order) return Response.json({ error: "Pedido não encontrado." }, { status: 404 });
+
+    const { data: job, error: jobError } = await admin.from("integration_jobs").insert({
+      job_type: "drive_reconcile",
+      dedupe_key: `drive_reconcile:${orderId}`,
+      status: "running",
+      attempts: 1,
+      started_at: new Date().toISOString(),
+      created_by: actor.user.id,
+      payload: { order_id: orderId, op_number: order.op_number },
+    }).select("id").maybeSingle();
+    if (jobError?.code === "23505") return Response.json({ error: "Já existe uma sincronização desta OS em andamento." }, { status: 409 });
+    if (!jobError && job) jobId = job.id;
 
     const [fileFoldersResult, pendingResult, registryResult] = await Promise.all([
       admin
@@ -364,6 +379,7 @@ export async function POST(request: Request) {
     }
 
     if (errors.length) {
+      if (jobId) await admin.from("integration_jobs").update({ status: "failed", last_error: errors.slice(0, 5).join(" | "), completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", jobId);
       return Response.json({
         error: `A pasta foi varrida, mas a sincronização não ficou completa: ${errors.slice(0, 5).join(" | ")}`,
         linked,
@@ -382,6 +398,7 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
+    if (jobId) await admin.from("integration_jobs").update({ status: "succeeded", result: { linked, updated, restored, found: driveFiles.length }, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", jobId);
     return Response.json({
       ok: true,
       linked,
@@ -399,6 +416,9 @@ export async function POST(request: Request) {
       files,
     });
   } catch (error) {
+    if (jobId && jobAdmin) {
+      await jobAdmin.from("integration_jobs").update({ status: "failed", last_error: error instanceof Error ? error.message : "Falha desconhecida", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", jobId);
+    }
     return responseMessage(error);
   }
 }

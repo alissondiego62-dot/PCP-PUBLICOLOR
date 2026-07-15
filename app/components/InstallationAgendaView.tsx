@@ -1,327 +1,66 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import {
-  dateOnlyLabel,
-  dueLabel,
-  installationDateTimeLabel,
-  targetDateForOrder,
-  toInstallationInputValue,
-} from "@/lib/pcp-formatters";
+import { dateOnlyLabel, dueLabel, installationDateTimeLabel, targetDateForOrder, toInstallationInputValue } from "@/lib/pcp-formatters";
 import type { DetailTab, Order, Sector } from "@/lib/pcp-types";
+import { supabase } from "@/lib/supabase";
+import { AppIcon } from "@/components/ui/AppIcon";
 
-type InstallationAgendaViewProps = {
-  orders: Order[];
-  sectors: Sector[];
-  installationSector: Sector | null;
-  canOperate: boolean;
-  busyOrderId: string | null;
-  onOpenOrder: (order: Order, tab: DetailTab) => void;
-  onSchedule: (event: FormEvent<HTMLFormElement>, order: Order) => void;
-};
-
+type Props = { orders: Order[]; sectors: Sector[]; installationSector: Sector | null; canOperate: boolean; busyOrderId: string | null; onOpenOrder: (order: Order, tab: DetailTab) => void; onSchedule: (event: FormEvent<HTMLFormElement>, order: Order) => void };
+type AgendaView = "month" | "week" | "day";
 const WEEK_DAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+function dateKey(date: Date) { return [date.getUTCFullYear(),String(date.getUTCMonth()+1).padStart(2,"0"),String(date.getUTCDate()).padStart(2,"0")].join("-"); }
+function currentManausDateKey() { return new Intl.DateTimeFormat("en-CA", { timeZone:"America/Manaus", year:"numeric", month:"2-digit", day:"2-digit" }).format(new Date()); }
+function monthKey(value: string) { return value.slice(0,7); }
+function monthDate(value: string) { const [year,month] = value.split("-").map(Number); return new Date(Date.UTC(year,month-1,1)); }
+function moveMonth(value: string, amount: number) { const date=monthDate(value); date.setUTCMonth(date.getUTCMonth()+amount); return dateKey(date).slice(0,7); }
+function monthLabel(value: string) { return monthDate(value).toLocaleDateString("pt-BR",{month:"long",year:"numeric",timeZone:"UTC"}); }
+function calendarDays(value: string) { const first=monthDate(value); const start=new Date(first); start.setUTCDate(start.getUTCDate()-first.getUTCDay()); return Array.from({length:42},(_,index)=>{const day=new Date(start);day.setUTCDate(start.getUTCDate()+index);return{key:dateKey(day),dayNumber:day.getUTCDate(),inMonth:day.getUTCMonth()===first.getUTCMonth()};}); }
+function targetDate(order: Order) { return targetDateForOrder(order.installation_scheduled_at,order.delivery_date); }
+function weekDates(selected: string) { const date=new Date(`${selected}T12:00:00Z`); date.setUTCDate(date.getUTCDate()-date.getUTCDay()); return Array.from({length:7},(_,i)=>{const next=new Date(date);next.setUTCDate(date.getUTCDate()+i);return dateKey(next);}); }
+function normalize(value: string | null | undefined) { return String(value || "").trim().toLocaleLowerCase("pt-BR"); }
+async function copyText(value: string) { if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value); const area=document.createElement("textarea");area.value=value;document.body.appendChild(area);area.select();document.execCommand("copy");area.remove(); }
 
-function dateKey(date: Date) {
-  return [
-    date.getUTCFullYear(),
-    String(date.getUTCMonth() + 1).padStart(2, "0"),
-    String(date.getUTCDate()).padStart(2, "0"),
-  ].join("-");
-}
+export function InstallationAgendaView({ orders,sectors,installationSector,canOperate,busyOrderId,onOpenOrder,onSchedule }: Props) {
+  const today=currentManausDateKey();
+  const [visibleMonth,setVisibleMonth]=useState(monthKey(today));
+  const [selectedDate,setSelectedDate]=useState(today);
+  const [view,setView]=useState<AgendaView>("month");
+  const [teamFilter,setTeamFilter]=useState("all");
+  const [vehicleFilter,setVehicleFilter]=useState("all");
+  const [dailyCapacity,setDailyCapacity]=useState(8);
+  const [copied,setCopied]=useState(false);
+  useEffect(()=>{ void supabase.from("operational_settings").select("setting_value").eq("setting_key","installation_daily_capacity").maybeSingle().then(({data})=>{const value=Number(data?.setting_value);if(Number.isFinite(value)&&value>0)setDailyCapacity(value);}); },[]);
 
-function currentManausDateKey() {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Manaus",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
+  const filteredOrders=useMemo(()=>orders.filter((order)=>teamFilter==="all"||normalize(order.installation_team)===normalize(teamFilter)).filter((order)=>vehicleFilter==="all"||normalize(order.installation_vehicle)===normalize(vehicleFilter)),[orders,teamFilter,vehicleFilter]);
+  const ordersByDate=useMemo(()=>{const grouped=new Map<string,Order[]>();filteredOrders.forEach((order)=>{const key=targetDate(order);const entries=grouped.get(key)||[];entries.push(order);grouped.set(key,entries);});grouped.forEach((entries)=>entries.sort((a,b)=>(new Date(a.installation_scheduled_at||0).getTime()-new Date(b.installation_scheduled_at||0).getTime())||a.op_number.localeCompare(b.op_number,"pt-BR",{numeric:true})));return grouped;},[filteredOrders]);
+  const teams=useMemo(()=>Array.from(new Set(orders.map((o)=>o.installation_team?.trim()).filter(Boolean) as string[])).sort(),[orders]);
+  const vehicles=useMemo(()=>Array.from(new Set(orders.map((o)=>o.installation_vehicle?.trim()).filter(Boolean) as string[])).sort(),[orders]);
+  const days=useMemo(()=>calendarDays(visibleMonth),[visibleMonth]);
+  const selectedOrders=ordersByDate.get(selectedDate)||[];
+  const week=useMemo(()=>weekDates(selectedDate),[selectedDate]);
+  const queueWithoutTime=useMemo(()=>filteredOrders.filter((order)=>order.installation_scheduled_at&&!order.installation_time_confirmed).slice(0,20),[filteredOrders]);
+  const conflicts=useMemo(()=>{const ids=new Set<string>();selectedOrders.forEach((order,index)=>selectedOrders.slice(index+1).forEach((other)=>{if(!order.installation_time_confirmed||!other.installation_time_confirmed)return;const first=new Date(order.installation_scheduled_at!).getTime();const second=new Date(other.installation_scheduled_at!).getTime();const near=Math.abs(first-second)<2*60*60*1000;const sameTeam=normalize(order.installation_team)&&normalize(order.installation_team)===normalize(other.installation_team);const sameVehicle=normalize(order.installation_vehicle)&&normalize(order.installation_vehicle)===normalize(other.installation_vehicle);if(near&&(sameTeam||sameVehicle)){ids.add(order.id);ids.add(other.id);}}));return ids;},[selectedOrders]);
+  const scheduledCount=orders.filter((o)=>o.installation_scheduled_at).length;
+  const inInstallationCount=orders.filter((o)=>o.sector_id===installationSector?.id).length;
+  const monthOrderCount=Array.from(ordersByDate.entries()).filter(([key])=>monthKey(key)===visibleMonth).reduce((sum,[,entries])=>sum+entries.length,0);
 
-function monthKeyFromDateKey(value: string) {
-  return value.slice(0, 7);
-}
+  function goToToday(){setVisibleMonth(monthKey(today));setSelectedDate(today);} function selectDay(key:string){setSelectedDate(key);setVisibleMonth(monthKey(key));}
+  async function copyRoute(){const lines=selectedOrders.map((order,index)=>`${index+1}. ${order.installation_time_confirmed&&order.installation_scheduled_at?new Date(order.installation_scheduled_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Manaus"}):"Horário a definir"} — OP ${order.op_number} — ${order.client_name}\n${order.installation_address||"Endereço não informado"}`);await copyText(lines.join("\n\n"));setCopied(true);window.setTimeout(()=>setCopied(false),1800);}
 
-function monthDate(value: string) {
-  const [year, month] = value.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, 1));
-}
+  return <section className="installation-agenda installation-calendar-view v34-agenda">
+    <div className="agenda-summary agenda-summary-responsive"><article><small>NO SETOR INSTALAÇÃO</small><strong>{inInstallationCount}</strong></article><article><small>COM DATA DEFINIDA</small><strong>{scheduledCount}</strong></article><article><small>NO MÊS EXIBIDO</small><strong>{monthOrderCount}</strong></article><article className={selectedOrders.length>dailyCapacity?"capacity-exceeded":""}><small>CAPACIDADE DO DIA</small><strong>{selectedOrders.length}/{dailyCapacity}</strong></article></div>
+    <div className="agenda-control-bar"><div className="page-section-tabs" role="tablist"><button className={view==="month"?"active":""} onClick={()=>setView("month")}>Mês</button><button className={view==="week"?"active":""} onClick={()=>setView("week")}>Semana</button><button className={view==="day"?"active":""} onClick={()=>setView("day")}>Dia</button></div><label>Equipe<select value={teamFilter} onChange={(e)=>setTeamFilter(e.target.value)}><option value="all">Todas</option>{teams.map((item)=><option key={item}>{item}</option>)}</select></label><label>Veículo<select value={vehicleFilter} onChange={(e)=>setVehicleFilter(e.target.value)}><option value="all">Todos</option>{vehicles.map((item)=><option key={item}>{item}</option>)}</select></label><button onClick={()=>void copyRoute()} disabled={!selectedOrders.length}><AppIcon name="copy"/>{copied?"Copiado":"Copiar roteiro"}</button></div>
 
-function moveMonth(value: string, amount: number) {
-  const date = monthDate(value);
-  date.setUTCMonth(date.getUTCMonth() + amount);
-  return dateKey(date).slice(0, 7);
-}
+    {queueWithoutTime.length>0&&<section className="agenda-unscheduled-queue"><header><div><small>FILA DE PROGRAMAÇÃO</small><h3>Data definida, horário pendente</h3></div><span>{queueWithoutTime.length}</span></header><div>{queueWithoutTime.map((order)=><button key={order.id} onClick={()=>{selectDay(targetDate(order));setView("day");}}><b>OP {order.op_number}</b><span>{order.client_name}</span><small>{dateOnlyLabel(targetDate(order))}</small></button>)}</div></section>}
 
-function monthLabel(value: string) {
-  return monthDate(value).toLocaleDateString("pt-BR", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
+    {view==="week"&&<section className="agenda-week-view">{week.map((key)=>{const entries=ordersByDate.get(key)||[];return <article key={key} className={key===selectedDate?"selected":""}><button onClick={()=>selectDay(key)}><small>{WEEK_DAYS[new Date(`${key}T12:00:00Z`).getUTCDay()]}</small><strong>{key.slice(8)}</strong><span>{entries.length}/{dailyCapacity}</span></button><div>{entries.slice(0,5).map((order)=><button key={order.id} onClick={()=>onOpenOrder(order,"installation")}><b>{order.installation_time_confirmed&&order.installation_scheduled_at?new Date(order.installation_scheduled_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Manaus"}):"--:--"}</b><span>OP {order.op_number}</span><small>{order.client_name}</small></button>)}</div></article>;})}</section>}
 
-function calendarDays(value: string) {
-  const firstDay = monthDate(value);
-  const gridStart = new Date(firstDay);
-  gridStart.setUTCDate(gridStart.getUTCDate() - firstDay.getUTCDay());
-  return Array.from({ length: 42 }, (_, index) => {
-    const day = new Date(gridStart);
-    day.setUTCDate(gridStart.getUTCDate() + index);
-    return {
-      key: dateKey(day),
-      dayNumber: day.getUTCDate(),
-      inMonth: day.getUTCMonth() === firstDay.getUTCMonth(),
-    };
-  });
-}
+    <div className={`agenda-calendar-layout ${view==="day"?"day-only":""}`}>
+      {view==="month"&&<section className="agenda-calendar-panel"><header className="agenda-calendar-toolbar"><div><small>AGENDA DE INSTALAÇÃO E ENTREGA</small><h2>{monthLabel(visibleMonth)}</h2></div><div className="agenda-calendar-navigation"><button onClick={()=>setVisibleMonth(moveMonth(visibleMonth,-1))}>‹</button><button className="today-button" onClick={goToToday}>Hoje</button><button onClick={()=>setVisibleMonth(moveMonth(visibleMonth,1))}>›</button></div></header><div className="agenda-weekdays">{WEEK_DAYS.map((day)=><span key={day}>{day}</span>)}</div><div className="agenda-month-grid">{days.map((day)=>{const entries=ordersByDate.get(day.key)||[];const exceeded=entries.length>dailyCapacity;return <button key={day.key} className={`${day.inMonth?"in-month":"outside-month"} ${day.key===selectedDate?"selected":""} ${day.key===today?"today":""} ${entries.length?"has-orders":""} ${exceeded?"capacity-exceeded":""}`} onClick={()=>selectDay(day.key)}><span className="calendar-day-number">{day.dayNumber}</span>{entries.length>0&&<span className="calendar-order-marker"><i/><b>{entries.length}</b></span>}</button>;})}</div></section>}
 
-function targetDate(order: Order) {
-  return targetDateForOrder(order.installation_scheduled_at, order.delivery_date);
-}
-
-export function InstallationAgendaView({
-  orders,
-  sectors,
-  installationSector,
-  canOperate,
-  busyOrderId,
-  onOpenOrder,
-  onSchedule,
-}: InstallationAgendaViewProps) {
-  const today = currentManausDateKey();
-  const initialMonth = monthKeyFromDateKey(today);
-  const [visibleMonth, setVisibleMonth] = useState(initialMonth);
-  const [selectedDate, setSelectedDate] = useState(today);
-
-  const ordersByDate = useMemo(() => {
-    const grouped = new Map<string, Order[]>();
-    orders.forEach((order) => {
-      const key = targetDate(order);
-      const entries = grouped.get(key) || [];
-      entries.push(order);
-      grouped.set(key, entries);
-    });
-    grouped.forEach((entries) => {
-      entries.sort((first, second) => {
-        const firstTime = first.installation_scheduled_at
-          ? new Date(first.installation_scheduled_at).getTime()
-          : 0;
-        const secondTime = second.installation_scheduled_at
-          ? new Date(second.installation_scheduled_at).getTime()
-          : 0;
-        return firstTime - secondTime || first.op_number.localeCompare(second.op_number, "pt-BR", { numeric: true });
-      });
-    });
-    return grouped;
-  }, [orders]);
-
-  const monthOrderDates = useMemo(
-    () => Array.from(ordersByDate.keys()).filter((key) => monthKeyFromDateKey(key) === visibleMonth).sort(),
-    [ordersByDate, visibleMonth],
-  );
-
-  useEffect(() => {
-    if (monthKeyFromDateKey(selectedDate) === visibleMonth) return;
-    setSelectedDate(monthOrderDates[0] || `${visibleMonth}-01`);
-  }, [monthOrderDates, selectedDate, visibleMonth]);
-
-  const days = useMemo(() => calendarDays(visibleMonth), [visibleMonth]);
-  const selectedOrders = ordersByDate.get(selectedDate) || [];
-  const inInstallationCount = orders.filter(
-    (order) => order.sector_id === installationSector?.id,
-  ).length;
-  const scheduledCount = orders.filter((order) => order.installation_scheduled_at).length;
-  const monthOrderCount = monthOrderDates.reduce(
-    (total, key) => total + (ordersByDate.get(key)?.length || 0),
-    0,
-  );
-
-  function goToMonth(month: string) {
-    setVisibleMonth(month);
-    const firstDate = Array.from(ordersByDate.keys())
-      .filter((key) => monthKeyFromDateKey(key) === month)
-      .sort()[0];
-    setSelectedDate(firstDate || `${month}-01`);
-  }
-
-  function goToToday() {
-    const month = monthKeyFromDateKey(today);
-    setVisibleMonth(month);
-    setSelectedDate(today);
-  }
-
-  return (
-    <section className="installation-agenda installation-calendar-view">
-      <div className="agenda-summary agenda-summary-responsive">
-        <article>
-          <small>NO SETOR INSTALAÇÃO</small>
-          <strong>{inInstallationCount}</strong>
-        </article>
-        <article>
-          <small>COM DATA DEFINIDA</small>
-          <strong>{scheduledCount}</strong>
-        </article>
-        <article>
-          <small>NO MÊS EXIBIDO</small>
-          <strong>{monthOrderCount}</strong>
-        </article>
-      </div>
-
-      <div className="agenda-calendar-layout">
-        <section className="agenda-calendar-panel" aria-label="Calendário de instalações e entregas">
-          <header className="agenda-calendar-toolbar">
-            <div>
-              <small>AGENDA DE INSTALAÇÃO E ENTREGA</small>
-              <h2>{monthLabel(visibleMonth)}</h2>
-            </div>
-            <div className="agenda-calendar-navigation">
-              <button type="button" onClick={() => goToMonth(moveMonth(visibleMonth, -1))} aria-label="Mês anterior">‹</button>
-              <button type="button" className="today-button" onClick={goToToday}>Hoje</button>
-              <button type="button" onClick={() => goToMonth(moveMonth(visibleMonth, 1))} aria-label="Próximo mês">›</button>
-            </div>
-          </header>
-
-          <div className="agenda-weekdays" aria-hidden="true">
-            {WEEK_DAYS.map((day) => <span key={day}>{day}</span>)}
-          </div>
-
-          <div className="agenda-month-grid">
-            {days.map((day) => {
-              const dayOrders = ordersByDate.get(day.key) || [];
-              const isSelected = day.key === selectedDate;
-              const isToday = day.key === today;
-              return (
-                <button
-                  type="button"
-                  key={day.key}
-                  className={`${day.inMonth ? "in-month" : "outside-month"} ${isSelected ? "selected" : ""} ${isToday ? "today" : ""} ${dayOrders.length ? "has-orders" : ""}`}
-                  onClick={() => {
-                    setSelectedDate(day.key);
-                    if (!day.inMonth) setVisibleMonth(monthKeyFromDateKey(day.key));
-                  }}
-                  aria-label={`${dateOnlyLabel(day.key)}: ${dayOrders.length} pedido(s)`}
-                  aria-pressed={isSelected}
-                >
-                  <span className="calendar-day-number">{day.dayNumber}</span>
-                  {dayOrders.length > 0 && (
-                    <span className="calendar-order-marker">
-                      <i />
-                      <b>{dayOrders.length}</b>
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="agenda-selected-day" aria-live="polite">
-          <header>
-            <div>
-              <small>PEDIDOS DO DIA</small>
-              <h2>{dateOnlyLabel(selectedDate)}</h2>
-            </div>
-            <span>{selectedOrders.length} pedido(s)</span>
-          </header>
-
-          {selectedOrders.length ? (
-            <div className="agenda-day-orders">
-              {selectedOrders.map((order) => {
-                const currentSectorName =
-                  sectors.find((sector) => sector.id === order.sector_id)?.name ||
-                  "Setor não identificado";
-                const alreadyInInstallation = order.sector_id === installationSector?.id;
-
-                return (
-                  <article className="agenda-day-order-card" key={order.id}>
-                    <div className="agenda-day-order-heading">
-                      <div>
-                        <b>OP {order.op_number}</b>
-                        <h3>{order.client_name}</h3>
-                        <p>{order.description}</p>
-                      </div>
-                      <time>
-                        {order.installation_time_confirmed && order.installation_scheduled_at
-                          ? new Date(order.installation_scheduled_at).toLocaleTimeString("pt-BR", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              timeZone: "America/Manaus",
-                            })
-                          : "Horário a definir"}
-                      </time>
-                    </div>
-
-                    <div className="agenda-order-details">
-                      <span>
-                        <small>PRODUÇÃO</small>
-                        <b className={dueLabel(order.delivery_date).startsWith("Atrasado") ? "late" : ""}>
-                          {dueLabel(order.delivery_date)}
-                        </b>
-                      </span>
-                      <span>
-                        <small>SETOR ATUAL</small>
-                        <b>{alreadyInInstallation ? "INSTALAÇÃO" : currentSectorName}</b>
-                      </span>
-                      <span>
-                        <small>RESPONSÁVEL</small>
-                        <b>{order.consultant_name || "Não definido"}</b>
-                      </span>
-                      <span>
-                        <small>EQUIPE</small>
-                        <b>{order.installation_team || "Não definida"}</b>
-                      </span>
-                    </div>
-
-                    {canOperate ? (
-                      <form className="agenda-reschedule-form" onSubmit={(event) => onSchedule(event, order)}>
-                        <label>
-                          Data e hora
-                          <input
-                            key={`${order.id}:${order.installation_scheduled_at || "new"}`}
-                            type="datetime-local"
-                            name="scheduled_at"
-                            defaultValue={toInstallationInputValue(order.installation_scheduled_at) || `${targetDate(order)}T08:00`}
-                            required
-                          />
-                        </label>
-                        <button type="submit" className="primary" disabled={busyOrderId === order.id}>
-                          {busyOrderId === order.id ? "Salvando…" : order.installation_time_confirmed ? "Reagendar" : "Definir horário"}
-                        </button>
-                      </form>
-                    ) : (
-                      <p className="agenda-readonly-date">
-                        {order.installation_time_confirmed && order.installation_scheduled_at
-                          ? installationDateTimeLabel(order.installation_scheduled_at)
-                          : `Data prevista: ${dateOnlyLabel(targetDate(order))} · horário não definido`}
-                      </p>
-                    )}
-
-                    <button type="button" className="agenda-open-order" onClick={() => onOpenOrder(order, "installation")}>
-                      Abrir pedido
-                    </button>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="agenda-day-empty">
-              <span>○</span>
-              <b>Nenhuma instalação ou entrega neste dia</b>
-              <p>Selecione outro dia marcado no calendário ou altere o mês.</p>
-            </div>
-          )}
-        </section>
-      </div>
-
-      {!installationSector && (
-        <div className="agenda-sector-warning">
-          O setor INSTALAÇÃO não está ativo. O calendário continua exibindo as datas dos pedidos, mas o status do setor não poderá ser identificado.
-        </div>
-      )}
-    </section>
-  );
+      <section className="agenda-selected-day"><header><div><small>PEDIDOS DO DIA</small><h2>{dateOnlyLabel(selectedDate)}</h2></div><span className={selectedOrders.length>dailyCapacity?"capacity-exceeded":""}>{selectedOrders.length}/{dailyCapacity}</span></header>{selectedOrders.length?<div className="agenda-day-orders">{selectedOrders.map((order)=>{const currentSectorName=sectors.find((s)=>s.id===order.sector_id)?.name||"Setor não identificado";const hasConflict=conflicts.has(order.id);return <article className={`agenda-day-order-card ${hasConflict?"has-conflict":""}`} key={order.id}><div className="agenda-day-order-heading"><div><b>OP {order.op_number}</b><h3>{order.client_name}</h3><p>{order.description}</p></div><time>{order.installation_time_confirmed&&order.installation_scheduled_at?new Date(order.installation_scheduled_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit",timeZone:"America/Manaus"}):"Horário a definir"}</time></div>{hasConflict&&<div className="agenda-conflict-alert"><AppIcon name="alert"/>Conflito de equipe ou veículo em horário próximo.</div>}<div className="agenda-order-details"><span><small>PRODUÇÃO</small><b className={dueLabel(order.delivery_date).startsWith("Atrasado")?"late":""}>{dueLabel(order.delivery_date)}</b></span><span><small>SETOR ATUAL</small><b>{order.sector_id===installationSector?.id?"INSTALAÇÃO":currentSectorName}</b></span><span><small>EQUIPE</small><b>{order.installation_team||"Não definida"}</b></span><span><small>VEÍCULO</small><b>{order.installation_vehicle||"Não definido"}</b></span></div>{canOperate?<form className="agenda-reschedule-form" onSubmit={(event)=>onSchedule(event,order)}><label>Data e hora<input key={`${order.id}:${order.installation_scheduled_at||"new"}`} type="datetime-local" name="scheduled_at" defaultValue={toInstallationInputValue(order.installation_scheduled_at)||`${targetDate(order)}T08:00`} required/></label><button type="submit" className="primary" disabled={busyOrderId===order.id}>{busyOrderId===order.id?"Salvando…":order.installation_time_confirmed?"Reagendar":"Definir horário"}</button></form>:<p className="agenda-readonly-date">{order.installation_time_confirmed&&order.installation_scheduled_at?installationDateTimeLabel(order.installation_scheduled_at):`Data prevista: ${dateOnlyLabel(targetDate(order))} · horário não definido`}</p>}<button className="agenda-open-order" onClick={()=>onOpenOrder(order,"installation")}><AppIcon name="eye"/> Abrir pedido</button></article>;})}</div>:<div className="agenda-day-empty"><span>○</span><b>Nenhuma instalação ou entrega neste dia</b><p>Selecione outro dia marcado no calendário.</p></div>}</section>
+    </div>
+    {!installationSector&&<div className="agenda-sector-warning">O setor INSTALAÇÃO não está ativo. O calendário continua exibindo as datas, mas o status do setor não poderá ser identificado.</div>}
+  </section>;
 }

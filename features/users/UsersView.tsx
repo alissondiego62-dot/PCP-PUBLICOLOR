@@ -1,24 +1,16 @@
 "use client";
 
-import type { Profile } from "@/lib/pcp-types";
+import { useMemo, useState } from "react";
+import type { AppRole, Profile } from "@/lib/pcp-types";
 import { roleLabel } from "@/lib/pcp-config";
+import { AppIcon } from "@/components/ui/AppIcon";
 
-export function UsersView({ profiles, currentUserId, profileBusyId, online, onNewUser, onChangeRole }: {
-  profiles: Profile[];
-  currentUserId: string;
-  profileBusyId: string | null;
-  online: boolean;
-  onNewUser: () => void;
-  onChangeRole: (profile: Profile, role: "admin" | "production" | "viewer") => void;
-}) {
-  return <section className="management-view">
-    <div className="users-panel">
-      <header>
-        <div><h2>Níveis de acesso</h2><p>Administrador gerencia tudo; Operador trabalha nos pedidos; Usuário apenas visualiza e comenta.</p></div>
-        <div className="users-panel-actions"><span className="role-badge" data-role="admin">Somente administrador</span><button type="button" className="primary new-user-button" onClick={onNewUser} disabled={!online}>＋ Novo usuário</button></div>
-      </header>
-      {profiles.map((profile) => <article className="user-role-row" key={profile.id}><div><b>{profile.name || profile.email.split("@")[0]}</b><small>{profile.email} · {profile.active ? "Ativo" : "Inativo"}</small><span className="current-user-label">{profile.id === currentUserId ? "Sua conta" : roleLabel[profile.role]}</span></div><select className="user-role-select" value={profile.role === "manager" ? "production" : profile.role} disabled={!online || profile.id === currentUserId || profileBusyId === profile.id || !profile.active} onChange={(event) => onChangeRole(profile, event.target.value as "admin" | "production" | "viewer")} aria-label={`Nível de acesso de ${profile.name || profile.email}`}><option value="admin">Administrador</option><option value="production">Operador</option><option value="viewer">Usuário</option></select></article>)}
-    </div>
-    <div className="settings-security-note">ⓘ {online ? "Use “Novo usuário” para enviar um convite. A pessoa criará a própria senha no primeiro acesso." : "Modo offline: os níveis de acesso estão disponíveis somente para consulta."}</div>
-  </section>;
+type Action = "activate" | "deactivate" | "resend_invite" | "cancel_invite";
+function dateTime(value: string | null | undefined) { if (!value) return "Nunca"; const date=new Date(value); return Number.isNaN(date.getTime())?"Nunca":date.toLocaleString("pt-BR",{dateStyle:"short",timeStyle:"short"}); }
+function statusLabel(profile: Profile) { if (!profile.active) return "Inativo"; if (profile.invite_status === "pending") return "Convite pendente"; if (profile.invite_status === "expired") return "Convite expirado"; return "Ativo"; }
+
+export function UsersView({ profiles,currentUserId,profileBusyId,online,onNewUser,onChangeRole,onManageUser }: { profiles:Profile[]; currentUserId:string; profileBusyId:string|null; online:boolean; onNewUser:()=>void; onChangeRole:(profile:Profile,role:AppRole)=>void; onManageUser:(profile:Profile,action:Action)=>void }) {
+  const [query,setQuery]=useState(""); const [role,setRole]=useState<"all"|AppRole>("all"); const [status,setStatus]=useState<"all"|"active"|"inactive"|"pending">("all");
+  const filtered=useMemo(()=>profiles.filter((p)=>role==="all"||p.role===role).filter((p)=>status==="all"||(status==="active"&&p.active&&p.invite_status!=="pending")||(status==="inactive"&&!p.active)||(status==="pending"&&p.invite_status==="pending")).filter((p)=>!query.trim()||`${p.name} ${p.email}`.toLowerCase().includes(query.trim().toLowerCase())),[profiles,query,role,status]);
+  return <section className="management-view users-v34"><div className="users-panel"><header><div><h2>Usuários e permissões</h2><p>Administrador, gerente, produção e visualizador possuem funções distintas.</p></div><button type="button" className="primary new-user-button" onClick={onNewUser} disabled={!online}>＋ Novo usuário</button></header><div className="users-filter-bar"><label><AppIcon name="search"/><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Buscar usuário…"/></label><select value={role} onChange={(e)=>setRole(e.target.value as typeof role)}><option value="all">Todos os papéis</option><option value="admin">Administrador</option><option value="manager">Gerente</option><option value="production">Produção</option><option value="viewer">Visualizador</option></select><select value={status} onChange={(e)=>setStatus(e.target.value as typeof status)}><option value="all">Todos os status</option><option value="active">Ativos</option><option value="pending">Convites pendentes</option><option value="inactive">Inativos</option></select></div><div className="users-role-matrix"><span>Administrador: acesso total</span><span>Gerente: operação e gestão</span><span>Produção: pedidos e atividades</span><span>Visualizador: consulta e comentários</span></div>{filtered.map((profile)=><article className="user-role-row user-v34-row" key={profile.id}><div className="user-identity"><b>{profile.name||profile.email.split("@")[0]}</b><small>{profile.email}</small><span data-status={profile.active?"active":"inactive"}>{statusLabel(profile)}</span></div><div className="user-meta"><span><small>Último acesso</small><b>{dateTime(profile.last_seen_at)}</b></span><span><small>Convite</small><b>{dateTime(profile.invited_at)}</b></span></div><select className="user-role-select" value={profile.role} disabled={!online||profile.id===currentUserId||profileBusyId===profile.id||!profile.active} onChange={(e)=>{const next=e.target.value as AppRole;if(next==="admin"&&!window.confirm(`Promover ${profile.name||profile.email} a administrador?`))return;onChangeRole(profile,next);}}><option value="admin">Administrador</option><option value="manager">Gerente</option><option value="production">Produção</option><option value="viewer">Visualizador</option></select><div className="user-row-actions">{profile.invite_status==="pending"&&<button title="Reenviar convite" onClick={()=>onManageUser(profile,"resend_invite")} disabled={!online||profileBusyId===profile.id}><AppIcon name="refresh"/></button>}{profile.invite_status==="pending"&&<button title="Cancelar convite" onClick={()=>window.confirm("Cancelar este convite?")&&onManageUser(profile,"cancel_invite")} disabled={!online||profileBusyId===profile.id}><AppIcon name="close"/></button>}{profile.id!==currentUserId&&<button title={profile.active?"Inativar usuário":"Ativar usuário"} onClick={()=>window.confirm(`${profile.active?"Inativar":"Ativar"} ${profile.name||profile.email}?`)&&onManageUser(profile,profile.active?"deactivate":"activate")} disabled={!online||profileBusyId===profile.id}>{profile.active?<AppIcon name="trash"/>:<AppIcon name="check"/>}</button>}</div></article>)}</div></section>;
 }

@@ -1,0 +1,58 @@
+PUBLICOLOR PCP 3.1.4 — ATIVIDADES, SUBATIVIDADES E PREÇOS
+
+IMPORTANTE
+- O ZIP parte do código 3.1.3, mas o SQL da raiz é cumulativo e também atende bancos ainda na versão 3.1.2.
+- Preserve .git e .env.local.
+- Teste primeiro no ambiente de homologação.
+- O SQL deve ser aplicado antes de abrir a nova versão da aba Atividades.
+
+1. BANCO DE HOMOLOGAÇÃO
+
+Execute no SQL Editor do Supabase de homologação:
+
+SQL-ATUALIZACAO-PUBLICOLOR-3.1.4.sql
+
+Depois, execute a validação somente leitura:
+
+SQL-VALIDAR-PUBLICOLOR-3.1.4.sql
+
+2. SUBSTITUIÇÃO DO PROJETO
+
+Extraia o ZIP na raiz do repositório, preservando somente:
+
+.git
+.env.local
+
+3. INSTALAÇÃO E VALIDAÇÃO
+
+corepack enable
+pnpm install --frozen-lockfile
+pnpm validate
+
+4. TESTE FUNCIONAL
+
+- Abra uma OS e cadastre dois materiais como Não disponível.
+- Confirme que existe uma atividade principal da OP no grupo Compras.
+- Confirme que os materiais aparecem como subatividades.
+- Recolha e expanda as subatividades.
+- Altere o status da atividade principal e teste as opções de propagação.
+- Informe quantidade, unidade e preço unitário.
+- Confirme o subtotal de cada item e o total da atividade principal.
+- Use Copiar lista e cole a mensagem em um campo de texto.
+- Finalize as subatividades e confirme a atualização dos materiais na OS.
+- Verifique o histórico da OS.
+
+5. PUBLICAÇÃO
+
+git add -A
+git commit -m "Publicolor 3.1.4: subatividades, lista de compras e precos"
+git push
+
+6. PRODUÇÃO
+
+Após validar em homologação:
+
+- execute o SQL 3.1.4 no Supabase de produção;
+- publique imediatamente o código 3.1.4;
+- atualize a página com Ctrl + Shift + R;
+- no celular, feche e abra novamente o PWA.

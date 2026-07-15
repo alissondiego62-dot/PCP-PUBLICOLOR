@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   try {
     await requireAppUser(request, ["admin"]);
     const admin = getSupabaseAdmin();
-    const [eventsResult, sessionsResult, missingOpResult, driveSettings] = await Promise.all([
+    const [eventsResult, sessionsResult, missingOpResult, jobsResult, driveSettings] = await Promise.all([
       admin
         .from("system_observability_events")
         .select("id,kind,level,source,action,status,message,order_id,actor_email,duration_ms,metadata,created_at")
@@ -31,6 +31,11 @@ export async function GET(request: Request) {
         .is("order_id", null)
         .order("created_at", { ascending: false })
         .limit(30),
+      admin
+        .from("integration_jobs")
+        .select("id,job_type,status,attempts,max_attempts,next_attempt_at,last_error,payload,created_at,updated_at")
+        .order("created_at", { ascending: false })
+        .limit(40),
       getDriveSettings().catch(() => null),
     ]);
 
@@ -61,8 +66,11 @@ export async function GET(request: Request) {
         averageDurationMs,
         orphanFiles: missingOrderFiles.length,
         activeUploads: sessions.filter((session) => new Date(session.expires_at).getTime() > Date.now()).length,
+        activeJobs: jobsResult.error ? 0 : (jobsResult.data || []).filter((job: { status: string }) => ["queued", "running"].includes(job.status)).length,
+        failedJobs: jobsResult.error ? 0 : (jobsResult.data || []).filter((job: { status: string }) => job.status === "failed").length,
       },
       events,
+      integrationJobs: jobsResult.error ? [] : jobsResult.data || [],
       uploadSessions: sessions.map((session) => ({
         ...session,
         status: new Date(session.expires_at).getTime() > Date.now() ? "pending" : "expired",

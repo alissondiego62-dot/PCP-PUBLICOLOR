@@ -1,9 +1,17 @@
-const SHELL_CACHE = "publicolor-pcp-shell-v3.2.0";
-const RUNTIME_CACHE = "publicolor-pcp-runtime-v3.2.0";
+const SHELL_CACHE = "publicolor-pcp-shell-v3.4.0";
+const RUNTIME_CACHE = "publicolor-pcp-runtime-v3.4.0";
 const THUMBNAIL_CACHE_PREFIX = "publicolor-order-thumbnails-v2";
 const STATIC_ASSETS = [
   "/",
   "/dashboard",
+  "/producao",
+  "/pedidos",
+  "/concluidos",
+  "/agenda",
+  "/atividades-compras",
+  "/clientes",
+  "/usuarios",
+  "/configuracoes",
   "/manifest.webmanifest",
   "/publicolor-logo.png",
   "/icons/publicolor-192.png",
@@ -63,4 +71,8 @@ self.addEventListener("fetch", (event) => {
       return cached || (await networkPromise) || Response.error();
     })());
   }
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
