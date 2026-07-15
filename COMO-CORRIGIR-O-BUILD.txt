@@ -1,0 +1,21 @@
+PCP-PUBLICOLOR 3.0.1 - CORRECAO DO BUILD
+
+1. Na pasta local do repositorio, preserve somente:
+   - a pasta .git
+   - o arquivo .env.local
+
+2. Apague os demais arquivos antigos.
+
+3. Extraia TODO o conteudo deste ZIP diretamente na raiz do repositorio.
+
+4. Confirme que existe na raiz:
+   postcss.config.mjs
+
+5. No GitHub Desktop, confirme que o arquivo antigo foi substituido.
+
+6. Commit sugerido:
+   fix: corrigir configuracao PostCSS da Vercel
+
+7. Envie para a branch main e aguarde o novo deploy.
+
+Nao execute novamente o SQL por causa deste erro. O banco nao causou a falha.
