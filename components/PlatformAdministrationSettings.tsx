@@ -60,7 +60,7 @@ type AdministrativeHistory = {
 type Feedback = { type: "success" | "error" | "warning"; text: string };
 
 
-type ThumbnailRepairResult = {
+type ThumbnailSyncResult = {
   ok: boolean;
   mode: "dry-run" | "applied";
   message: string;
@@ -99,34 +99,41 @@ async function apiRequest<T>(path: string, init: RequestInit = {}) {
   return payload;
 }
 
-function ThumbnailRepairPanel() {
+function ThumbnailSyncPanel() {
   const [busy, setBusy] = useState<"analyze" | "apply" | "">("");
-  const [result, setResult] = useState<ThumbnailRepairResult | null>(null);
-  const [repairFeedback, setRepairFeedback] = useState<Feedback | null>(null);
+  const [result, setResult] = useState<ThumbnailSyncResult | null>(null);
+  const [syncFeedback, setSyncFeedback] = useState<Feedback | null>(null);
 
-  async function runRepair(apply: boolean) {
+  async function runSync(apply: boolean) {
     if (busy) return;
-    if (apply && !window.confirm("Restaurar agora as miniaturas usando os PNGs da aba Arquivos de cada pedido e subpedido?")) return;
+    if (
+      apply &&
+      !window.confirm(
+        "Sincronizar agora as miniaturas usando os PNGs da aba Arquivos de cada pedido e subpedido?",
+      )
+    ) return;
 
     setBusy(apply ? "apply" : "analyze");
-    setRepairFeedback(null);
+    setSyncFeedback(null);
+
     try {
-      const response = await apiRequest<ThumbnailRepairResult>("/api/admin/repair-drive-thumbnails", {
+      const response = await apiRequest<ThumbnailSyncResult>("/api/admin/repair-drive-thumbnails", {
         method: "POST",
         body: JSON.stringify({
           apply,
-          confirmation: apply ? "REPARAR MINIATURAS" : "",
+          confirmation: apply ? "SINCRONIZAR MINIATURAS" : "",
         }),
       });
+
       setResult(response);
-      setRepairFeedback({
+      setSyncFeedback({
         type: response.totals.errors > 0 ? "warning" : "success",
         text: response.message,
       });
     } catch (error) {
-      setRepairFeedback({
+      setSyncFeedback({
         type: "error",
-        text: error instanceof Error ? error.message : "Falha ao restaurar as miniaturas.",
+        text: error instanceof Error ? error.message : "Falha ao sincronizar as miniaturas.",
       });
     } finally {
       setBusy("");
@@ -134,24 +141,53 @@ function ThumbnailRepairPanel() {
   }
 
   return <div className="platform-card" style={{ marginBottom: 16, border: "2px solid #6d287c" }}>
-    <div className="platform-card-title"><span>PNG</span><div><small>REPARO V3 ATIVO · EXECUÇÃO ÚNICA</small><h3>Restaurar miniaturas da aba Arquivos</h3></div></div>
-    <p className="platform-card-description">Localiza o PNG já registrado na categoria Documento de cada pedido ou subpedido e restaura o campo usado pelo Kanban. Nenhum arquivo será reenviado ao Drive.</p>
-    {repairFeedback && <div className={`platform-feedback ${repairFeedback.type}`}>{repairFeedback.text}</div>}
-    <div className="platform-actions">
-      <button type="button" onClick={() => void runRepair(false)} disabled={Boolean(busy)}>{busy === "analyze" ? "Analisando…" : "1. Analisar miniaturas"}</button>
-      <button type="button" className="danger" onClick={() => void runRepair(true)} disabled={Boolean(busy) || !result || result.totals.repairable === 0}>{busy === "apply" ? "Restaurando…" : `2. Restaurar ${result?.totals.repairable || 0} miniatura(s)`}</button>
+    <div className="platform-card-title">
+      <span>PNG</span>
+      <div>
+        <small>SINCRONIZAÇÃO PERMANENTE</small>
+        <h3>Sincronizar miniaturas da aba Arquivos</h3>
+      </div>
     </div>
+
+    <p className="platform-card-description">
+      Localiza o PNG registrado na categoria Documento de cada pedido ou subpedido e atualiza a miniatura usada no Kanban. A função pode ser executada novamente sempre que necessário e não reenvia arquivos ao Drive.
+    </p>
+
+    {syncFeedback && <div className={`platform-feedback ${syncFeedback.type}`}>{syncFeedback.text}</div>}
+
+    <div className="platform-actions">
+      <button type="button" onClick={() => void runSync(false)} disabled={Boolean(busy)}>
+        {busy === "analyze" ? "Verificando…" : "Verificar pendências"}
+      </button>
+      <button type="button" className="primary" onClick={() => void runSync(true)} disabled={Boolean(busy)}>
+        {busy === "apply" ? "Sincronizando…" : "Sincronizar miniaturas agora"}
+      </button>
+    </div>
+
     {result && <div className="platform-sql-summary">
       <span><b>Pedidos</b>{result.totals.orders}</span>
       <span><b>PNG encontrados</b>{result.totals.pngFiles}</span>
-      <span><b>Para restaurar</b>{result.totals.repairable}</span>
-      <span><b>Já vinculados</b>{result.totals.alreadyLinked}</span>
+      <span><b>Pendentes</b>{result.totals.repairable}</span>
+      <span><b>Já sincronizados</b>{result.totals.alreadyLinked}</span>
       <span><b>Sem PNG</b>{result.totals.missingPng}</span>
       {result.mode === "applied" && <span><b>Atualizados</b>{result.totals.updated}</span>}
       {result.totals.errors > 0 && <span><b>Erros</b>{result.totals.errors}</span>}
     </div>}
-    {result?.errors?.length > 0 && <details className="platform-sql-preview"><summary>Ver erros encontrados</summary><div className="platform-history-list">{result.errors.map((item) => <article key={`${item.opNumber}-${item.message}`}><header><b>OP {item.opNumber}</b><span>Erro</span></header><p>{item.message}</p></article>)}</div></details>}
-    <div className="platform-danger-note"><b>Depois da execução</b><span>Atualize o sistema com Ctrl + F5. Esta ferramenta pode ser removida após a confirmação das miniaturas.</span></div>
+
+    {result?.errors?.length > 0 && <details className="platform-sql-preview">
+      <summary>Ver erros encontrados</summary>
+      <div className="platform-history-list">
+        {result.errors.map((item) => <article key={`${item.opNumber}-${item.message}`}>
+          <header><b>OP {item.opNumber}</b><span>Erro</span></header>
+          <p>{item.message}</p>
+        </article>)}
+      </div>
+    </details>}
+
+    <div className="platform-danger-note">
+      <b>Funcionamento</b>
+      <span>A execução é idempotente: pedidos já sincronizados são mantidos. Após atualizar miniaturas, recarregue o sistema com Ctrl + F5.</span>
+    </div>
   </div>;
 }
 
@@ -388,7 +424,7 @@ export function PlatformAdministrationSettings() {
       <span>Somente administrador</span>
     </header>
 
-    <ThumbnailRepairPanel />
+    <ThumbnailSyncPanel />
 
     {feedback && <div className={`platform-feedback ${feedback.type}`}>{feedback.text}</div>}
     {!settings.current_environment.encryption_root_configured && <div className="platform-feedback warning">Antes de trocar o banco, configure uma DRIVE_SETTINGS_ENCRYPTION_KEY própria na Vercel. O fallback atual depende da Service Role e não é seguro para uma mudança de Supabase.</div>}

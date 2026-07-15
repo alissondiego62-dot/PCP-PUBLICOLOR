@@ -1,15 +1,16 @@
-PCP-PUBLICOLOR — REPARO DE MINIATURAS V3
+PCP-PUBLICOLOR — SINCRONIZAÇÃO PERMANENTE DE MINIATURAS
 
-Copie exatamente estas duas pastas para a raiz do repositório:
+Copie as pastas app e components para a raiz do repositório PCP-PUBLICOLOR.
 
-components/PlatformAdministrationSettings.tsx
-app/api/admin/repair-drive-thumbnails/route.ts
+Arquivos:
+- components/PlatformAdministrationSettings.tsx
+- app/api/admin/repair-drive-thumbnails/route.ts
 
-Não substitua app/page.tsx.
+O botão ficará permanentemente em Configurações > Administração técnica.
 
-Depois do deploy, abra Configurações. O painel aparecerá logo abaixo do título
-"Banco, ambiente e atualizações SQL" com o texto:
+Uso:
+1. Verificar pendências: apenas analisa e não altera dados.
+2. Sincronizar miniaturas agora: procura os PNGs da aba Arquivos e atualiza orders.main_image_path.
 
-REPARO V3 ATIVO · EXECUÇÃO ÚNICA
-
-Primeiro clique em "Analisar miniaturas" e depois em "Restaurar".
+A operação pode ser repetida. Pedidos já sincronizados não são alterados novamente.
+Após executar, atualize o navegador com Ctrl + F5.

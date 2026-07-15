@@ -145,7 +145,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({})) as RepairRequest;
     const apply = body.apply === true;
 
-    if (apply && String(body.confirmation || "").trim().toUpperCase() !== "REPARAR MINIATURAS") {
+    if (apply && String(body.confirmation || "").trim().toUpperCase() !== "SINCRONIZAR MINIATURAS") {
       return Response.json({ error: "Confirmação inválida." }, { status: 400 });
     }
 
@@ -205,8 +205,8 @@ export async function POST(request: Request) {
           const { error: historyError } = await admin.from("order_history").insert({
             order_id: item.orderId,
             user_id: actor.user.id,
-            action_type: "thumbnail_repaired_after_migration",
-            description: `Miniatura restaurada após a migração usando o PNG da aba Arquivos: ${item.fileName}`,
+            action_type: "thumbnail_synced_from_files",
+            description: `Miniatura sincronizada usando o PNG da aba Arquivos: ${item.fileName}`,
           });
 
           return { item, error: null, historyError: historyError?.message || null };
@@ -226,8 +226,8 @@ export async function POST(request: Request) {
       ok: true,
       mode: apply ? "applied" : "dry-run",
       message: apply
-        ? `${updated.length} miniatura(s) restaurada(s). Atualize a página com Ctrl + F5.`
-        : `${planned.length} pedido(s) estão prontos para restaurar a miniatura.`,
+        ? `${updated.length} miniatura(s) sincronizada(s). Atualize a página com Ctrl + F5.`
+        : `${planned.length} pedido(s) precisam sincronizar a miniatura.`,
       totals: {
         orders: orders.length,
         pngFiles: files.length,
