@@ -59,6 +59,7 @@ type AdministrativeHistory = {
 
 type Feedback = { type: "success" | "error" | "warning"; text: string };
 
+
 type ThumbnailRepairResult = {
   ok: boolean;
   mode: "dry-run" | "applied";
@@ -69,15 +70,10 @@ type ThumbnailRepairResult = {
     repairable: number;
     alreadyLinked: number;
     missingPng: number;
-    ambiguous: number;
     updated: number;
     errors: number;
     historyWarnings: number;
   };
-  repairable: Array<{ opNumber: string; clientName: string; fileName: string; selectionReason: string }>;
-  updated: Array<{ opNumber: string; clientName: string; fileName: string }>;
-  missing: Array<{ opNumber: string; clientName: string; reason: string }>;
-  ambiguous: Array<{ opNumber: string; clientName: string; reason: string; candidates: string[] }>;
   errors: Array<{ opNumber: string; message: string }>;
 };
 
@@ -101,6 +97,62 @@ async function apiRequest<T>(path: string, init: RequestInit = {}) {
   const payload = await response.json().catch(() => ({})) as T & { error?: string };
   if (!response.ok) throw new Error(payload.error || "Não foi possível concluir a operação.");
   return payload;
+}
+
+function ThumbnailRepairPanel() {
+  const [busy, setBusy] = useState<"analyze" | "apply" | "">("");
+  const [result, setResult] = useState<ThumbnailRepairResult | null>(null);
+  const [repairFeedback, setRepairFeedback] = useState<Feedback | null>(null);
+
+  async function runRepair(apply: boolean) {
+    if (busy) return;
+    if (apply && !window.confirm("Restaurar agora as miniaturas usando os PNGs da aba Arquivos de cada pedido e subpedido?")) return;
+
+    setBusy(apply ? "apply" : "analyze");
+    setRepairFeedback(null);
+    try {
+      const response = await apiRequest<ThumbnailRepairResult>("/api/admin/repair-drive-thumbnails", {
+        method: "POST",
+        body: JSON.stringify({
+          apply,
+          confirmation: apply ? "REPARAR MINIATURAS" : "",
+        }),
+      });
+      setResult(response);
+      setRepairFeedback({
+        type: response.totals.errors > 0 ? "warning" : "success",
+        text: response.message,
+      });
+    } catch (error) {
+      setRepairFeedback({
+        type: "error",
+        text: error instanceof Error ? error.message : "Falha ao restaurar as miniaturas.",
+      });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return <div className="platform-card" style={{ marginBottom: 16, border: "2px solid #6d287c" }}>
+    <div className="platform-card-title"><span>PNG</span><div><small>REPARO V3 ATIVO · EXECUÇÃO ÚNICA</small><h3>Restaurar miniaturas da aba Arquivos</h3></div></div>
+    <p className="platform-card-description">Localiza o PNG já registrado na categoria Documento de cada pedido ou subpedido e restaura o campo usado pelo Kanban. Nenhum arquivo será reenviado ao Drive.</p>
+    {repairFeedback && <div className={`platform-feedback ${repairFeedback.type}`}>{repairFeedback.text}</div>}
+    <div className="platform-actions">
+      <button type="button" onClick={() => void runRepair(false)} disabled={Boolean(busy)}>{busy === "analyze" ? "Analisando…" : "1. Analisar miniaturas"}</button>
+      <button type="button" className="danger" onClick={() => void runRepair(true)} disabled={Boolean(busy) || !result || result.totals.repairable === 0}>{busy === "apply" ? "Restaurando…" : `2. Restaurar ${result?.totals.repairable || 0} miniatura(s)`}</button>
+    </div>
+    {result && <div className="platform-sql-summary">
+      <span><b>Pedidos</b>{result.totals.orders}</span>
+      <span><b>PNG encontrados</b>{result.totals.pngFiles}</span>
+      <span><b>Para restaurar</b>{result.totals.repairable}</span>
+      <span><b>Já vinculados</b>{result.totals.alreadyLinked}</span>
+      <span><b>Sem PNG</b>{result.totals.missingPng}</span>
+      {result.mode === "applied" && <span><b>Atualizados</b>{result.totals.updated}</span>}
+      {result.totals.errors > 0 && <span><b>Erros</b>{result.totals.errors}</span>}
+    </div>}
+    {result?.errors?.length > 0 && <details className="platform-sql-preview"><summary>Ver erros encontrados</summary><div className="platform-history-list">{result.errors.map((item) => <article key={`${item.opNumber}-${item.message}`}><header><b>OP {item.opNumber}</b><span>Erro</span></header><p>{item.message}</p></article>)}</div></details>}
+    <div className="platform-danger-note"><b>Depois da execução</b><span>Atualize o sistema com Ctrl + F5. Esta ferramenta pode ser removida após a confirmação das miniaturas.</span></div>
+  </div>;
 }
 
 function dateTimeLabel(value: string | null | undefined) {
@@ -139,7 +191,6 @@ export function PlatformAdministrationSettings() {
   const [sqlFile, setSqlFile] = useState<File | null>(null);
   const [sqlPreview, setSqlPreview] = useState("");
   const [targetTest, setTargetTest] = useState<{ admin_ready: boolean; message: string; project_ref: string } | null>(null);
-  const [thumbnailRepair, setThumbnailRepair] = useState<ThumbnailRepairResult | null>(null);
 
   async function loadData() {
     setLoading(true);
@@ -326,37 +377,6 @@ export function PlatformAdministrationSettings() {
     }
   }
 
-  async function repairDriveThumbnails(apply: boolean) {
-    if (busy) return;
-    if (apply && !window.confirm(
-      "Executar agora a reparação das miniaturas? O sistema usará os PNGs já vinculados na aba Arquivos e substituirá caminhos antigos ou vazios.",
-    )) return;
-
-    setBusy(apply ? "apply-thumbnail-repair" : "analyze-thumbnail-repair");
-    setFeedback(null);
-    try {
-      const result = await apiRequest<ThumbnailRepairResult>("/api/admin/repair-drive-thumbnails", {
-        method: "POST",
-        body: JSON.stringify({
-          apply,
-          confirmation: apply ? "REPARAR MINIATURAS" : "",
-        }),
-      });
-      setThumbnailRepair(result);
-      setFeedback({
-        type: result.totals.errors > 0 ? "warning" : "success",
-        text: result.message,
-      });
-    } catch (error) {
-      setFeedback({
-        type: "error",
-        text: error instanceof Error ? error.message : "Falha ao reparar as miniaturas.",
-      });
-    } finally {
-      setBusy("");
-    }
-  }
-
   const previewRisks = useMemo(() => riskFlags(sqlPreview), [sqlPreview]);
 
   if (loading) return <section className="platform-admin-module"><div className="platform-loading">Carregando banco, ambiente e atualizações SQL…</div></section>;
@@ -368,6 +388,8 @@ export function PlatformAdministrationSettings() {
       <span>Somente administrador</span>
     </header>
 
+    <ThumbnailRepairPanel />
+
     {feedback && <div className={`platform-feedback ${feedback.type}`}>{feedback.text}</div>}
     {!settings.current_environment.encryption_root_configured && <div className="platform-feedback warning">Antes de trocar o banco, configure uma DRIVE_SETTINGS_ENCRYPTION_KEY própria na Vercel. O fallback atual depende da Service Role e não é seguro para uma mudança de Supabase.</div>}
 
@@ -376,51 +398,6 @@ export function PlatformAdministrationSettings() {
       <article><small>PUBLISHABLE KEY</small><b>{settings.current_environment.publishable_key_masked}</b><span>Variável de produção</span></article>
       <article><small>SERVICE ROLE</small><b>{settings.current_environment.service_role_key_masked}</b><span>Nunca exibida integralmente</span></article>
       <article><small>URL DO SISTEMA</small><b>{settings.current_environment.app_url || "Não informada"}</b><span>Raiz de criptografia: {settings.current_environment.encryption_root_configured ? "configurada" : "usando fallback"}</span></article>
-    </div>
-
-    <div className="platform-card">
-      <div className="platform-card-title"><span>PNG</span><div><small>EXECUÇÃO ÚNICA</small><h3>Restaurar miniaturas após a migração</h3></div></div>
-      <p className="platform-card-description">Esta correção não envia arquivos novamente. Ela procura, em cada pedido e subpedido, o PNG já vinculado na aba Arquivos e restaura o campo usado pelo Kanban. Casos com vários PNGs sem identificação clara são separados para revisão e não são alterados automaticamente.</p>
-      <div className="platform-actions">
-        <button type="button" onClick={() => void repairDriveThumbnails(false)} disabled={Boolean(busy)}>
-          {busy === "analyze-thumbnail-repair" ? "Analisando…" : "Analisar miniaturas"}
-        </button>
-        <button
-          type="button"
-          className="danger"
-          onClick={() => void repairDriveThumbnails(true)}
-          disabled={Boolean(busy) || !thumbnailRepair || thumbnailRepair.totals.repairable === 0}
-        >
-          {busy === "apply-thumbnail-repair" ? "Restaurando…" : `Restaurar ${thumbnailRepair?.totals.repairable || 0} miniatura(s)`}
-        </button>
-      </div>
-      {thumbnailRepair && <div className="platform-sql-summary">
-        <span><b>Pedidos analisados</b>{thumbnailRepair.totals.orders}</span>
-        <span><b>PNG encontrados</b>{thumbnailRepair.totals.pngFiles}</span>
-        <span><b>Prontos para reparar</b>{thumbnailRepair.totals.repairable}</span>
-        <span><b>Já vinculados</b>{thumbnailRepair.totals.alreadyLinked}</span>
-        <span><b>Sem PNG</b>{thumbnailRepair.totals.missingPng}</span>
-        <span><b>Revisão manual</b>{thumbnailRepair.totals.ambiguous}</span>
-        {thumbnailRepair.mode === "applied" && <span><b>Atualizados</b>{thumbnailRepair.totals.updated}</span>}
-        {thumbnailRepair.totals.errors > 0 && <span><b>Erros</b>{thumbnailRepair.totals.errors}</span>}
-      </div>}
-      {thumbnailRepair?.ambiguous.length > 0 && <details className="platform-sql-preview">
-        <summary>Pedidos com mais de um PNG sem identificação clara</summary>
-        <div className="platform-history-list">{thumbnailRepair.ambiguous.map((item) => <article key={item.opNumber}>
-          <header><b>OP {item.opNumber}</b><span>Revisar</span></header>
-          <small>{item.clientName}</small>
-          <p>{item.reason}</p>
-          <code>{item.candidates.join(" · ")}</code>
-        </article>)}</div>
-      </details>}
-      {thumbnailRepair?.errors.length > 0 && <details className="platform-sql-preview">
-        <summary>Erros durante a execução</summary>
-        <div className="platform-history-list">{thumbnailRepair.errors.map((item) => <article key={item.opNumber}>
-          <header><b>OP {item.opNumber}</b><span>Erro</span></header>
-          <p>{item.message}</p>
-        </article>)}</div>
-      </details>}
-      <div className="platform-danger-note"><b>Depois de usar</b><span>Atualize a página com Ctrl + F5. Como esta é uma ferramenta temporária, remova este cartão e a rota <code>/api/admin/repair-drive-thumbnails</code> do projeto após confirmar as miniaturas.</span></div>
     </div>
 
     <div className="platform-two-column">

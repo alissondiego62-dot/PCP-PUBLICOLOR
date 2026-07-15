@@ -1,17 +1,15 @@
-PUBLICOLOR 2.0 — ORDEM DE ATUALIZAÇÃO
+PCP-PUBLICOLOR — REPARO DE MINIATURAS V3
 
-1. Execute no Supabase:
-   supabase/migrations/20260723010000_drive_order_folder_registry_and_sync.sql
+Copie exatamente estas duas pastas para a raiz do repositório:
 
-2. Publique este projeto na Vercel e faça um novo deployment de produção.
+components/PlatformAdministrationSettings.tsx
+app/api/admin/repair-drive-thumbnails/route.ts
 
-3. Caso a conta Google tenha sido conectada antes desta versão:
-   Configurações → Integração com Google Drive → Desconectar → Conectar novamente.
-   Aceite o acesso completo ao Google Drive.
+Não substitua app/page.tsx.
 
-4. Atualize o navegador com Ctrl + F5.
+Depois do deploy, abra Configurações. O painel aparecerá logo abaixo do título
+"Banco, ambiente e atualizações SQL" com o texto:
 
-5. Teste:
-   Pedido → Arquivos → Atualizar arquivos.
+REPARO V3 ATIVO · EXECUÇÃO ÚNICA
 
-A sincronização consulta a raiz da OP, todas as sete categorias e todas as subpastas.
+Primeiro clique em "Analisar miniaturas" e depois em "Restaurar".

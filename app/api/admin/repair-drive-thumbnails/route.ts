@@ -35,12 +35,6 @@ type OrderFileRow = {
   created_at: string;
 };
 
-type CandidateDecision = {
-  file: OrderFileRow | null;
-  reason: string;
-  ambiguous: boolean;
-};
-
 type PlannedRepair = {
   orderId: string;
   opNumber: string;
@@ -49,7 +43,6 @@ type PlannedRepair = {
   nextPath: string;
   fileId: string;
   fileName: string;
-  selectionReason: string;
 };
 
 function normalizedText(value: string | null | undefined) {
@@ -76,63 +69,24 @@ function newest(files: OrderFileRow[]) {
   return [...files].sort((first, second) => fileTimestamp(second) - fileTimestamp(first))[0] || null;
 }
 
-function chooseThumbnail(files: OrderFileRow[]): CandidateDecision {
+function chooseThumbnail(files: OrderFileRow[]) {
   const pngFiles = files.filter((file) => Boolean(file.drive_file_id) && isPng(file));
-  if (pngFiles.length === 0) {
-    return { file: null, reason: "Nenhum PNG do Google Drive vinculado à aba Arquivos.", ambiguous: false };
-  }
+  if (pngFiles.length === 0) return null;
 
+  // A pasta 04 - DOCUMENTOS é registrada no sistema como categoria "document".
+  // Caso haja mais de um PNG, usa o modificado mais recentemente.
+  const documentPngs = pngFiles.filter((file) => normalizedText(file.file_category) === "document");
+  if (documentPngs.length > 0) return newest(documentPngs);
+
+  // Compatibilidade com registros migrados que perderam a categoria.
   const explicitlyMarked = pngFiles.filter((file) => {
     const notes = normalizedText(file.notes);
-    return /miniatura|pagina da ordem|pagina da os|importad[ao] em pdf|pdf.*miniatura/.test(notes);
-  });
-  if (explicitlyMarked.length > 0) {
-    return {
-      file: newest(explicitlyMarked),
-      reason: explicitlyMarked.length === 1
-        ? "PNG identificado pelas observações como miniatura."
-        : "PNG mais recente entre os arquivos identificados pelas observações como miniatura.",
-      ambiguous: false,
-    };
-  }
-
-  const documents = pngFiles.filter((file) => normalizedText(file.file_category) === "document");
-  if (documents.length === 1) {
-    return { file: documents[0], reason: "Único PNG da categoria Documentos.", ambiguous: false };
-  }
-
-  const namedAsThumbnail = documents.filter((file) => {
     const name = normalizedText(file.file_name);
-    return /miniatura|thumbnail|capa|pagina|page|ordem|\bos\b|\bop\b/.test(name);
+    return /miniatura|thumbnail|pagina|capa/.test(`${notes} ${name}`);
   });
-  if (namedAsThumbnail.length === 1) {
-    return { file: namedAsThumbnail[0], reason: "PNG de Documentos identificado pelo nome como miniatura.", ambiguous: false };
-  }
-  if (namedAsThumbnail.length > 1) {
-    return {
-      file: newest(namedAsThumbnail),
-      reason: "Há mais de um PNG de Documentos com nome de miniatura.",
-      ambiguous: true,
-    };
-  }
+  if (explicitlyMarked.length > 0) return newest(explicitlyMarked);
 
-  if (documents.length > 1) {
-    return {
-      file: newest(documents),
-      reason: "Há mais de um PNG na categoria Documentos e nenhum está identificado como miniatura.",
-      ambiguous: true,
-    };
-  }
-
-  if (pngFiles.length === 1) {
-    return { file: pngFiles[0], reason: "Único PNG vinculado ao pedido.", ambiguous: false };
-  }
-
-  return {
-    file: newest(pngFiles),
-    reason: "Há mais de um PNG vinculado ao pedido e nenhum está identificado como miniatura.",
-    ambiguous: true,
-  };
+  return newest(pngFiles);
 }
 
 async function loadAllOrders(): Promise<OrderRow[]> {
@@ -171,13 +125,7 @@ async function loadAllPngFiles(): Promise<OrderFileRow[]> {
       .order("created_at", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
 
-    if (error) {
-      const migrationHint = /removed_from_order_at|schema cache|does not exist/i.test(error.message)
-        ? " Execute todas as migrações atuais do projeto antes desta reparação."
-        : "";
-      throw new Error(`Não foi possível carregar os arquivos vinculados: ${error.message}.${migrationHint}`);
-    }
-
+    if (error) throw new Error(`Não foi possível carregar os arquivos vinculados: ${error.message}`);
     const page = ((data || []) as OrderFileRow[]).filter(isPng);
     rows.push(...page);
     if ((data || []).length < PAGE_SIZE) break;
@@ -198,7 +146,7 @@ export async function POST(request: Request) {
     const apply = body.apply === true;
 
     if (apply && String(body.confirmation || "").trim().toUpperCase() !== "REPARAR MINIATURAS") {
-      return Response.json({ error: "Digite REPARAR MINIATURAS para confirmar a execução." }, { status: 400 });
+      return Response.json({ error: "Confirmação inválida." }, { status: 400 });
     }
 
     const [orders, files] = await Promise.all([loadAllOrders(), loadAllPngFiles()]);
@@ -212,31 +160,18 @@ export async function POST(request: Request) {
 
     const planned: PlannedRepair[] = [];
     const alreadyLinked: Array<{ opNumber: string; fileName: string }> = [];
-    const missing: Array<{ opNumber: string; clientName: string; reason: string }> = [];
-    const ambiguous: Array<{ opNumber: string; clientName: string; reason: string; candidates: string[] }> = [];
+    const missing: Array<{ opNumber: string; clientName: string }> = [];
 
     for (const order of orders) {
-      const orderFiles = filesByOrder.get(order.id) || [];
-      const decision = chooseThumbnail(orderFiles);
-
-      if (!decision.file?.drive_file_id) {
-        missing.push({ opNumber: order.op_number, clientName: order.client_name, reason: decision.reason });
+      const selected = chooseThumbnail(filesByOrder.get(order.id) || []);
+      if (!selected?.drive_file_id) {
+        missing.push({ opNumber: order.op_number, clientName: order.client_name });
         continue;
       }
 
-      if (decision.ambiguous) {
-        ambiguous.push({
-          opNumber: order.op_number,
-          clientName: order.client_name,
-          reason: decision.reason,
-          candidates: orderFiles.filter(isPng).map((file) => file.file_name),
-        });
-        continue;
-      }
-
-      const nextPath = `${DRIVE_THUMBNAIL_PREFIX}${decision.file.drive_file_id}`;
+      const nextPath = `${DRIVE_THUMBNAIL_PREFIX}${selected.drive_file_id}`;
       if (order.main_image_path?.trim() === nextPath) {
-        alreadyLinked.push({ opNumber: order.op_number, fileName: decision.file.file_name });
+        alreadyLinked.push({ opNumber: order.op_number, fileName: selected.file_name });
         continue;
       }
 
@@ -246,9 +181,8 @@ export async function POST(request: Request) {
         clientName: order.client_name,
         previousPath: order.main_image_path,
         nextPath,
-        fileId: decision.file.drive_file_id,
-        fileName: decision.file.file_name,
-        selectionReason: decision.reason,
+        fileId: selected.drive_file_id,
+        fileName: selected.file_name,
       });
     }
 
@@ -266,7 +200,7 @@ export async function POST(request: Request) {
             .update({ main_image_path: item.nextPath })
             .eq("id", item.orderId);
 
-          if (error) return { item, error: error.message };
+          if (error) return { item, error: error.message, historyError: null as string | null };
 
           const { error: historyError } = await admin.from("order_history").insert({
             order_id: item.orderId,
@@ -279,13 +213,10 @@ export async function POST(request: Request) {
         }));
 
         for (const result of results) {
-          if (result.error) {
-            errors.push({ opNumber: result.item.opNumber, message: result.error });
-          } else {
+          if (result.error) errors.push({ opNumber: result.item.opNumber, message: result.error });
+          else {
             updated.push(result.item);
-            if (result.historyError) {
-              historyWarnings.push({ opNumber: result.item.opNumber, message: result.historyError });
-            }
+            if (result.historyError) historyWarnings.push({ opNumber: result.item.opNumber, message: result.historyError });
           }
         }
       }
@@ -295,15 +226,14 @@ export async function POST(request: Request) {
       ok: true,
       mode: apply ? "applied" : "dry-run",
       message: apply
-        ? `${updated.length} miniatura(s) restaurada(s). Atualize a página do sistema para recarregar os cartões.`
-        : `${planned.length} pedido(s) podem ter a miniatura restaurada sem reenviar arquivos.`,
+        ? `${updated.length} miniatura(s) restaurada(s). Atualize a página com Ctrl + F5.`
+        : `${planned.length} pedido(s) estão prontos para restaurar a miniatura.`,
       totals: {
         orders: orders.length,
         pngFiles: files.length,
         repairable: planned.length,
         alreadyLinked: alreadyLinked.length,
         missingPng: missing.length,
-        ambiguous: ambiguous.length,
         updated: updated.length,
         errors: errors.length,
         historyWarnings: historyWarnings.length,
@@ -312,7 +242,6 @@ export async function POST(request: Request) {
       updated: limited(updated),
       alreadyLinked: limited(alreadyLinked),
       missing: limited(missing),
-      ambiguous: limited(ambiguous),
       errors: limited(errors),
       historyWarnings: limited(historyWarnings),
       reportLimitedTo: MAX_REPORT_ITEMS,
