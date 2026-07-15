@@ -3,13 +3,21 @@
 import type { Order } from "@/lib/pcp-types";
 
 type ThumbnailOrder = Pick<Order, "id" | "main_image_path">;
+export type ThumbnailRequestPriority = "foreground" | "background";
 
 const THUMBNAIL_CACHE_PREFIX = "publicolor-order-thumbnails-v2";
 const LEGACY_CACHE = "publicolor-order-thumbnails-v1";
 const MAX_CONCURRENT_REQUESTS = 4;
+const MAX_BACKGROUND_REQUESTS = 2;
+
+type QueueTicket = {
+  resolve: (release: () => void) => void;
+};
 
 let activeRequests = 0;
-const requestQueue: Array<() => void> = [];
+let activeBackgroundRequests = 0;
+const foregroundQueue: QueueTicket[] = [];
+const backgroundQueue: QueueTicket[] = [];
 const pendingRequests = new Map<string, Promise<string | null>>();
 const cachePromises = new Map<string, Promise<Cache>>();
 let legacyCacheCleanupStarted = false;
@@ -32,7 +40,6 @@ function cacheName(userId: string) {
   return `${THUMBNAIL_CACHE_PREFIX}:${userId}`;
 }
 
-
 function openUserCache(userId: string) {
   const name = cacheName(userId);
   const existing = cachePromises.get(name);
@@ -48,17 +55,51 @@ async function cleanupLegacyCache() {
   await window.caches.delete(LEGACY_CACHE).catch(() => false);
 }
 
-async function withRequestSlot<T>(task: () => Promise<T>): Promise<T> {
-  if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
-    await new Promise<void>((resolve) => requestQueue.push(resolve));
-  }
+function pumpRequestQueue() {
+  while (activeRequests < MAX_CONCURRENT_REQUESTS) {
+    let priority: ThumbnailRequestPriority | null = null;
+    let ticket: QueueTicket | undefined;
 
-  activeRequests += 1;
+    if (foregroundQueue.length) {
+      priority = "foreground";
+      ticket = foregroundQueue.shift();
+    } else if (backgroundQueue.length && activeBackgroundRequests < MAX_BACKGROUND_REQUESTS) {
+      priority = "background";
+      ticket = backgroundQueue.shift();
+    }
+
+    if (!priority || !ticket) return;
+
+    activeRequests += 1;
+    if (priority === "background") activeBackgroundRequests += 1;
+
+    let released = false;
+    ticket.resolve(() => {
+      if (released) return;
+      released = true;
+      activeRequests = Math.max(0, activeRequests - 1);
+      if (priority === "background") {
+        activeBackgroundRequests = Math.max(0, activeBackgroundRequests - 1);
+      }
+      pumpRequestQueue();
+    });
+  }
+}
+
+async function withRequestSlot<T>(
+  task: () => Promise<T>,
+  priority: ThumbnailRequestPriority,
+): Promise<T> {
+  const release = await new Promise<() => void>((resolve) => {
+    const queue = priority === "foreground" ? foregroundQueue : backgroundQueue;
+    queue.push({ resolve });
+    pumpRequestQueue();
+  });
+
   try {
     return await task();
   } finally {
-    activeRequests -= 1;
-    requestQueue.shift()?.();
+    release();
   }
 }
 
@@ -72,6 +113,7 @@ export async function fetchOptimizedOrderThumbnail(
   order: ThumbnailOrder,
   accessToken: string,
   userId: string,
+  priority: ThumbnailRequestPriority = "foreground",
 ) {
   const imagePath = order.main_image_path?.trim();
   if (!imagePath) return null;
@@ -106,7 +148,7 @@ export async function fetchOptimizedOrderThumbnail(
       const fallback = await cache?.match(cacheRequest);
       return fallback ? responseObjectUrl(fallback) : null;
     }
-  });
+  }, priority);
 
   pendingRequests.set(key, request);
   try {

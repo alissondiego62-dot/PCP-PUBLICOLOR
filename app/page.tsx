@@ -55,7 +55,7 @@ import { ReportsView } from "@/features/reports/ReportsView";
 import { UsersView } from "@/features/users/UsersView";
 import { SettingsView } from "@/features/settings/SettingsView";
 import { MoveOrderModal } from "@/features/kanban/MoveOrderModal";
-import { KanbanView } from "@/features/kanban/KanbanView";
+import { KanbanView, type KanbanMetricKey } from "@/features/kanban/KanbanView";
 import { OrdersView } from "@/features/orders/OrdersView";
 import { OfflineModeBanner } from "@/components/OfflineModeBanner";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -281,6 +281,12 @@ export default function Home() {
   const [priorityFilter, setPriorityFilter] = useState<"all" | Priority>("all");
   const [deadlineFilter, setDeadlineFilter] = useState<DeadlineFilter>("all");
   const [responsibleFilter, setResponsibleFilter] = useState("all");
+  const [kanbanMetricFilter, setKanbanMetricFilter] = useState<KanbanMetricKey | null>(null);
+  const [thumbnailProgress, setThumbnailProgress] = useState<{
+    phase: "idle" | "priority" | "background" | "complete";
+    loaded: number;
+    total: number;
+  }>({ phase: "idle", loaded: 0, total: 0 });
   const [sortMode, setSortMode] = useState<SortMode>("newest");
   const [activeView, setActiveView] = useState<ViewKey>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -301,10 +307,12 @@ export default function Home() {
   const imageUrlsRef = useRef<Record<string, string>>({});
   const imagePathsRef = useRef<Record<string, string>>({});
   const thumbnailRequestsRef = useRef<Set<string>>(new Set());
+  const thumbnailBackgroundGenerationRef = useRef(0);
   const [boardScrollWidth, setBoardScrollWidth] = useState(0);
   const isOnline = useOnlineStatus();
   useObservability();
   const [activeKanbanSectorIndex, setActiveKanbanSectorIndex] = useState(0);
+  const activeKanbanSectorIndexRef = useRef(0);
 
   const consultantOptions = useMemo(() => {
     const names = new Set<string>(DEFAULT_CONSULTANTS);
@@ -316,6 +324,10 @@ export default function Home() {
 
     return Array.from(names).sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [orders]);
+
+  useEffect(() => {
+    activeKanbanSectorIndexRef.current = activeKanbanSectorIndex;
+  }, [activeKanbanSectorIndex]);
 
   useEffect(() => {
     if (!imagePreview) return;
@@ -624,40 +636,158 @@ export default function Home() {
   const canOperate = Boolean(roleCanOperate && isOnline);
   const showOrderActions = canOperate && activeView === "orders";
   const canUploadFiles = Boolean(currentProfile?.active && isOnline);
-  const requestOrderThumbnail = useCallback(async (order: Order) => {
+  const storeOrderThumbnailUrl = useCallback((orderId: string, path: string, url: string) => {
+    setImageUrls((current) => {
+      const previous = current[orderId];
+      if (previous?.startsWith("blob:") && previous !== url) URL.revokeObjectURL(previous);
+      const next = { ...current, [orderId]: url };
+      imageUrlsRef.current = next;
+      imagePathsRef.current[orderId] = path;
+      return next;
+    });
+  }, []);
+
+  const loadOrderThumbnail = useCallback(async (
+    order: Order,
+    accessToken: string,
+    priority: "foreground" | "background",
+  ) => {
     const path = order.main_image_path?.trim() || "";
-    if (!user || !path) return;
-    if (imageUrlsRef.current[order.id] && imagePathsRef.current[order.id] === path) return;
+    const userId = user?.id;
+    if (!userId || !path) return false;
+    if (imageUrlsRef.current[order.id] && imagePathsRef.current[order.id] === path) return true;
 
     const requestKey = `${order.id}:${path}`;
-    if (thumbnailRequestsRef.current.has(requestKey)) return;
+    if (thumbnailRequestsRef.current.has(requestKey)) return false;
     thumbnailRequestsRef.current.add(requestKey);
 
     try {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-      const url = await fetchOptimizedOrderThumbnail(order, token, user.id);
-      if (!url) return;
-
-      setImageUrls((current) => {
-        const previous = current[order.id];
-        if (previous?.startsWith("blob:") && previous !== url) URL.revokeObjectURL(previous);
-        const next = { ...current, [order.id]: url };
-        imageUrlsRef.current = next;
-        imagePathsRef.current[order.id] = path;
-        return next;
-      });
+      const url = await fetchOptimizedOrderThumbnail(order, accessToken, userId, priority);
+      if (!url) return false;
+      storeOrderThumbnailUrl(order.id, path, url);
+      return true;
     } finally {
       thumbnailRequestsRef.current.delete(requestKey);
     }
-  }, [user]);
+  }, [storeOrderThumbnailUrl, user?.id]);
+
+  const requestOrderThumbnail = useCallback(async (order: Order) => {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    await loadOrderThumbnail(order, token, "foreground");
+  }, [loadOrderThumbnail]);
 
   useEffect(() => {
     if (modal && modal !== "new" && modal.main_image_path && !imageUrlsRef.current[modal.id]) {
       void requestOrderThumbnail(modal);
     }
   }, [modal, requestOrderThumbnail]);
+
+
+  useEffect(() => {
+    if (activeView !== "kanban" || !user || !isOnline) {
+      thumbnailBackgroundGenerationRef.current += 1;
+      return;
+    }
+
+    const candidates = activeOrders.filter((order) => Boolean(order.main_image_path?.trim()));
+    if (!candidates.length) {
+      const timer = window.setTimeout(() => setThumbnailProgress({ phase: "complete", loaded: 0, total: 0 }), 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    const generation = thumbnailBackgroundGenerationRef.current + 1;
+    thumbnailBackgroundGenerationRef.current = generation;
+    let cancelled = false;
+
+    const isCurrentGeneration = () => !cancelled && thumbnailBackgroundGenerationRef.current === generation;
+    const countLoaded = () => candidates.filter((order) => {
+      const path = order.main_image_path?.trim() || "";
+      return Boolean(imageUrlsRef.current[order.id] && imagePathsRef.current[order.id] === path);
+    }).length;
+    const wait = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+    const yieldToBrowser = () => new Promise<void>((resolve) => {
+      const idleWindow = window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      };
+      if (idleWindow.requestIdleCallback) {
+        idleWindow.requestIdleCallback(() => resolve(), { timeout: 180 });
+      } else {
+        window.setTimeout(resolve, 50);
+      }
+    });
+
+    const runBackgroundQueue = async () => {
+      setThumbnailProgress({ phase: "priority", loaded: countLoaded(), total: candidates.length });
+
+      // Aguarda a fila das miniaturas visíveis e próximas permanecer ociosa.
+      let quietSince = Date.now();
+      const waitStartedAt = Date.now();
+      while (isCurrentGeneration()) {
+        if (thumbnailRequestsRef.current.size === 0) {
+          if (Date.now() - quietSince >= 650) break;
+        } else {
+          quietSince = Date.now();
+        }
+        if (Date.now() - waitStartedAt > 12_000) break;
+        await wait(140);
+      }
+      if (!isCurrentGeneration()) return;
+
+      const { data } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token;
+      if (!accessToken || !isCurrentGeneration()) return;
+
+      const sectorIndex = new Map(activeSectors.map((sector, index) => [sector.id, index]));
+      const currentSectorIndex = activeKanbanSectorIndexRef.current;
+      const remaining = candidates
+        .filter((order) => {
+          const path = order.main_image_path?.trim() || "";
+          return !(imageUrlsRef.current[order.id] && imagePathsRef.current[order.id] === path);
+        })
+        .sort((first, second) => {
+          const firstDistance = Math.abs((sectorIndex.get(first.sector_id) ?? 999) - currentSectorIndex);
+          const secondDistance = Math.abs((sectorIndex.get(second.sector_id) ?? 999) - currentSectorIndex);
+          if (firstDistance !== secondDistance) return firstDistance - secondDistance;
+          return new Date(second.created_at).getTime() - new Date(first.created_at).getTime();
+        });
+
+      if (!remaining.length) {
+        setThumbnailProgress({ phase: "complete", loaded: candidates.length, total: candidates.length });
+        return;
+      }
+
+      setThumbnailProgress({ phase: "background", loaded: countLoaded(), total: candidates.length });
+      let cursor = 0;
+      const worker = async () => {
+        while (isCurrentGeneration()) {
+          const order = remaining[cursor];
+          cursor += 1;
+          if (!order) return;
+          await loadOrderThumbnail(order, accessToken, "background");
+          if (!isCurrentGeneration()) return;
+          setThumbnailProgress({ phase: "background", loaded: countLoaded(), total: candidates.length });
+          await yieldToBrowser();
+        }
+      };
+
+      await Promise.all([worker(), worker()]);
+      if (!isCurrentGeneration()) return;
+      setThumbnailProgress({ phase: "complete", loaded: countLoaded(), total: candidates.length });
+    };
+
+    const timer = window.setTimeout(() => {
+      void runBackgroundQueue().catch(() => {
+        if (!isCurrentGeneration()) return;
+        setThumbnailProgress({ phase: "complete", loaded: countLoaded(), total: candidates.length });
+      });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeOrders, activeSectors, activeView, isOnline, loadOrderThumbnail, user?.id]);
 
   const handleRealtimeOrder = useCallback(async (payload: { eventType: "INSERT" | "UPDATE" | "DELETE"; new: Partial<Order>; old: Partial<Order> }) => {
     const orderId = String((payload.eventType === "DELETE" ? payload.old.id : payload.new.id) || "");
@@ -773,16 +903,23 @@ export default function Home() {
       const due = new Date(`${order.delivery_date}T12:00:00`);
       const difference = Math.round((due.getTime() - today.getTime()) / 86400000);
       const matchesDeadline = deadlineFilter === "all" || (deadlineFilter === "late" && difference < 0) || (deadlineFilter === "today" && difference === 0) || (deadlineFilter === "next7" && difference >= 0 && difference <= 7);
-      return matchesTerm && matchesSector && matchesStatus && matchesPriority && matchesResponsible && matchesDeadline;
+      const matchesMetric = !kanbanMetricFilter
+        || kanbanMetricFilter === "active"
+        || (kanbanMetricFilter === "in_progress" && order.status === "in_progress")
+        || (kanbanMetricFilter === "waiting_action" && ["waiting", "waiting_client"].includes(order.status))
+        || (kanbanMetricFilter === "late" && difference < 0)
+        || (kanbanMetricFilter === "today" && difference === 0)
+        || (kanbanMetricFilter === "blocked" && (order.blocked || order.status === "paused"));
+      return matchesTerm && matchesSector && matchesStatus && matchesPriority && matchesResponsible && matchesDeadline && matchesMetric;
     });
     return result.sort((a, b) => {
       if (sortMode === "oldest") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       if (sortMode === "delivery") return orderTargetDate(a).localeCompare(orderTargetDate(b));
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [activeOrders, search, sectorFilter, statusFilter, priorityFilter, responsibleFilter, deadlineFilter, sortMode]);
+  }, [activeOrders, search, sectorFilter, statusFilter, priorityFilter, responsibleFilter, deadlineFilter, kanbanMetricFilter, sortMode]);
 
-  const activeFilterCount = [sectorFilter, statusFilter, priorityFilter, responsibleFilter, deadlineFilter].filter((value) => value !== "all").length;
+  const activeFilterCount = [sectorFilter, statusFilter, priorityFilter, responsibleFilter, deadlineFilter].filter((value) => value !== "all").length + (kanbanMetricFilter ? 1 : 0);
   const hasActiveSearch = Boolean(search.trim() || activeFilterCount > 0);
   const visibleSectors = hasActiveSearch ? activeSectors.filter((sector) => filtered.some((order) => order.sector_id === sector.id)) : activeSectors;
 
@@ -932,6 +1069,30 @@ export default function Home() {
     setPriorityFilter("all");
     setResponsibleFilter("all");
     setDeadlineFilter("all");
+    setKanbanMetricFilter(null);
+  }
+
+  function applyKanbanMetricFilter(metric: KanbanMetricKey) {
+    if (metric === "installation_today") {
+      navigateTo("installation");
+      return;
+    }
+
+    if (metric === "active") {
+      clearFilters();
+      navigateTo("kanban");
+      return;
+    }
+
+    const shouldClear = kanbanMetricFilter === metric;
+    setSearch("");
+    setSectorFilter("all");
+    setStatusFilter("all");
+    setPriorityFilter("all");
+    setResponsibleFilter("all");
+    setDeadlineFilter("all");
+    setKanbanMetricFilter(shouldClear ? null : metric);
+    navigateTo("kanban");
   }
 
   function toggleOrderFamily(parentOp: string) {
@@ -2211,6 +2372,8 @@ export default function Home() {
         search={search}
         filtersOpen={filtersOpen}
         activeFilterCount={activeFilterCount}
+        activeMetric={kanbanMetricFilter}
+        thumbnailProgress={thumbnailProgress}
         sortMode={sortMode}
         loading={loading}
         sectorFilter={sectorFilter}
@@ -2235,11 +2398,12 @@ export default function Home() {
         onToggleFilters={() => setFiltersOpen((value) => !value)}
         onCloseFilters={() => setFiltersOpen(false)}
         onCycleSort={cycleSortMode}
-        onSectorFilterChange={setSectorFilter}
-        onStatusFilterChange={setStatusFilter}
-        onPriorityFilterChange={setPriorityFilter}
-        onResponsibleFilterChange={setResponsibleFilter}
-        onDeadlineFilterChange={setDeadlineFilter}
+        onSectorFilterChange={(value) => { setKanbanMetricFilter(null); setSectorFilter(value); }}
+        onStatusFilterChange={(value) => { setKanbanMetricFilter(null); setStatusFilter(value); }}
+        onPriorityFilterChange={(value) => { setKanbanMetricFilter(null); setPriorityFilter(value); }}
+        onResponsibleFilterChange={(value) => { setKanbanMetricFilter(null); setResponsibleFilter(value); }}
+        onDeadlineFilterChange={(value) => { setKanbanMetricFilter(null); setDeadlineFilter(value); }}
+        onMetricSelect={applyKanbanMetricFilter}
         onClearFilters={clearFilters}
         onScrollToSector={scrollToKanbanSector}
         onTopScroll={() => syncKanbanScroll(topScrollRef.current, boardRef.current)}

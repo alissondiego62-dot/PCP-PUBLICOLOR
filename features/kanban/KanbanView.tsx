@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import type { DbStatus, DeadlineFilter, Order, Priority, Sector, SortMode, UiStatus } from "@/lib/pcp-types";
 import { priorityLabel, statusDotClass, statusesForSector, statusToDb } from "@/lib/pcp-config";
@@ -9,6 +9,35 @@ import { driveThumbnailFileId } from "@/lib/order-thumbnail";
 
 const UNASSIGNED_RESPONSIBLE_FILTER = "__unassigned__";
 const sortLabels: Record<SortMode, string> = { newest: "Mais recentes", oldest: "Mais antigos", delivery: "Prazo" };
+
+export type KanbanMetricKey =
+  | "active"
+  | "in_progress"
+  | "waiting_action"
+  | "late"
+  | "today"
+  | "installation_today"
+  | "blocked";
+
+type ThumbnailProgress = {
+  phase: "idle" | "priority" | "background" | "complete";
+  loaded: number;
+  total: number;
+};
+
+function dateKeyInManaus(value: Date | string) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Manaus",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value || "";
+  const month = parts.find((part) => part.type === "month")?.value || "";
+  const day = parts.find((part) => part.type === "day")?.value || "";
+  return `${year}-${month}-${day}`;
+}
 
 function normalizedResponsibleName(value: string | null | undefined) {
   return value?.trim().toLocaleUpperCase("pt-BR") || "";
@@ -21,6 +50,11 @@ function orderTargetDateLabel(order: Order) {
 }
 function isPdfPageThumbnailPath(path: string | null | undefined) {
   return Boolean(path?.includes("/pdf-pages/") || driveThumbnailFileId(path));
+}
+
+function orderMatchesLane(order: Order, status: UiStatus) {
+  if (order.status === "paused") return status === "Aguardando";
+  return order.status === statusToDb[status];
 }
 
 
@@ -86,6 +120,8 @@ export type KanbanViewProps = {
   search: string;
   filtersOpen: boolean;
   activeFilterCount: number;
+  activeMetric: KanbanMetricKey | null;
+  thumbnailProgress: ThumbnailProgress;
   sortMode: SortMode;
   loading: boolean;
   sectorFilter: string;
@@ -115,6 +151,7 @@ export type KanbanViewProps = {
   onPriorityFilterChange: (value: "all" | Priority) => void;
   onResponsibleFilterChange: (value: string) => void;
   onDeadlineFilterChange: (value: DeadlineFilter) => void;
+  onMetricSelect: (metric: KanbanMetricKey) => void;
   onClearFilters: () => void;
   onScrollToSector: (index: number) => void;
   onTopScroll: () => void;
@@ -134,27 +171,99 @@ export type KanbanViewProps = {
 export function KanbanView(props: KanbanViewProps) {
   const {
     activeOrderCounts, activeOrders, installationOrders, filtered, activeSectors, visibleSectors,
-    search, filtersOpen, activeFilterCount, sortMode, loading, sectorFilter, statusFilter,
+    search, filtersOpen, activeFilterCount, activeMetric, thumbnailProgress, sortMode, loading, sectorFilter, statusFilter,
     priorityFilter, responsibleFilter, deadlineFilter, consultantOptions, activeKanbanSectorIndex,
     boardScrollWidth, boardRef, topScrollRef, dragOverLane, canOperate, isAdmin, busyOrderId,
     commentCounts, hasActiveSearch, error, cardImageUrl, onSearchChange, onToggleFilters,
     onCloseFilters, onCycleSort, onSectorFilterChange, onStatusFilterChange, onPriorityFilterChange,
-    onResponsibleFilterChange, onDeadlineFilterChange, onClearFilters, onScrollToSector,
+    onResponsibleFilterChange, onDeadlineFilterChange, onMetricSelect, onClearFilters, onScrollToSector,
     onTopScroll, onBoardScroll, onDragStart, onDragEnd, onDragOverLane, onDrop, onOpenOrder,
     onDeleteOrder, onPreview, onThumbnailVisible, onMoveOrder, onFinishOrder,
   } = props;
 
+  const metricSummary = useMemo(() => {
+    const todayKey = dateKeyInManaus(new Date());
+    const waitingOrders = activeOrders.filter((order) => ["waiting", "waiting_client"].includes(order.status));
+    const lateOrders = activeOrders.filter((order) => dueLabel(order.delivery_date).startsWith("Atrasado"));
+    const productionToday = activeOrders.filter((order) => dueLabel(order.delivery_date) === "Prazo hoje");
+    const inProgress = activeOrders.filter((order) => order.status === "in_progress");
+    const blocked = activeOrders.filter((order) => order.blocked || order.status === "paused");
+    const installationToday = installationOrders.filter((order) =>
+      Boolean(order.installation_scheduled_at) && dateKeyInManaus(order.installation_scheduled_at!) === todayKey,
+    );
+    const futureInstallations = installationOrders.filter((order) =>
+      Boolean(order.installation_scheduled_at) && dateKeyInManaus(order.installation_scheduled_at!) > todayKey,
+    );
+
+    return {
+      waiting: waitingOrders.length,
+      waitingWithoutResponsible: waitingOrders.filter((order) => !order.consultant_name?.trim()).length,
+      late: lateOrders.length,
+      lateWaiting: lateOrders.filter((order) => ["waiting", "waiting_client"].includes(order.status)).length,
+      lateInProgress: lateOrders.filter((order) => order.status === "in_progress").length,
+      productionToday: productionToday.length,
+      inProgress: inProgress.length,
+      blocked: blocked.length,
+      installationToday: installationToday.length,
+      futureInstallations: futureInstallations.length,
+      withoutResponsible: activeOrders.filter((order) => !order.consultant_name?.trim()).length,
+      withoutDate: activeOrders.filter((order) => !order.delivery_date?.trim()).length,
+    };
+  }, [activeOrders, installationOrders]);
+
+  const metricCards: Array<{
+    key: KanbanMetricKey;
+    icon: string;
+    tone: string;
+    title: string;
+    value: number;
+    detail: string;
+  }> = [
+    { key: "active", icon: "▦", tone: "blue", title: "Pedidos ativos", value: activeOrderCounts.orders, detail: "Ordens principais abertas" },
+    { key: "in_progress", icon: "↗", tone: "purple", title: "Em produção", value: metricSummary.inProgress, detail: "Itens em andamento" },
+    { key: "waiting_action", icon: "◷", tone: "yellow", title: "Aguardando ação", value: metricSummary.waiting, detail: `${metricSummary.waitingWithoutResponsible} sem responsável` },
+    { key: "late", icon: "!", tone: "red", title: "Atrasados", value: metricSummary.late, detail: `${metricSummary.lateWaiting} aguardando · ${metricSummary.lateInProgress} produzindo` },
+    { key: "today", icon: "⌑", tone: "amber", title: "Produção hoje", value: metricSummary.productionToday, detail: "Prazo interno do dia" },
+    { key: "installation_today", icon: "◉", tone: "magenta", title: "Instalações hoje", value: metricSummary.installationToday, detail: "Compromissos do dia" },
+    { key: "blocked", icon: "Ⅱ", tone: "dark-red", title: "Bloqueados/pausados", value: metricSummary.blocked, detail: "Exigem intervenção" },
+  ];
+
+  const thumbnailStatusText = thumbnailProgress.phase === "priority"
+    ? "Priorizando miniaturas visíveis…"
+    : thumbnailProgress.phase === "background"
+      ? `Preparando miniaturas ${thumbnailProgress.loaded}/${thumbnailProgress.total}`
+      : thumbnailProgress.phase === "complete" && thumbnailProgress.total > 0
+        ? thumbnailProgress.loaded === thumbnailProgress.total
+          ? `Miniaturas prontas ${thumbnailProgress.loaded}/${thumbnailProgress.total}`
+          : `Miniaturas carregadas ${thumbnailProgress.loaded}/${thumbnailProgress.total}`
+        : "";
+
   return <>
-    <section className="metrics">
-      <article><span className="metric-icon blue">▦</span><div><small>Pedidos ativos</small><strong>{activeOrderCounts.orders}</strong><em>Ordens principais</em></div></article>
-      <article><span className="metric-icon purple">≡</span><div><small>Subpedidos ativos</small><strong>{activeOrderCounts.suborders}</strong><em>Itens das OPs</em></div></article>
-      <article><span className="metric-icon yellow">◷</span><div><small>Aguardando</small><strong>{activeOrders.filter((order) => order.status === "waiting").length}</strong><em>Em fila de produção</em></div></article>
-      <article><span className="metric-icon red">!</span><div><small>Atrasados</small><strong>{activeOrders.filter((order) => dueLabel(order.delivery_date).startsWith("Atrasado")).length}</strong><em className="danger">Requer atenção</em></div></article>
-      <article><span className="metric-icon amber">⌑</span><div><small>Produção para hoje</small><strong>{activeOrders.filter((order) => dueLabel(order.delivery_date) === "Prazo hoje").length}</strong><em>Prioridade do dia</em></div></article>
-      <article><span className="metric-icon green">↗</span><div><small>Em andamento</small><strong>{activeOrders.filter((order) => order.status === "in_progress").length}</strong><em>Produção ativa</em></div></article>
-      <article><span className="metric-icon magenta">◉</span><div><small>Instalações/entregas</small><strong>{installationOrders.filter((order) => order.installation_scheduled_at).length}</strong><em>Com data definida</em></div></article>
+    <section className="metrics production-metrics" aria-label="Indicadores operacionais do Kanban">
+      {metricCards.map((metric) => {
+        const selected = activeMetric === metric.key
+          || (metric.key === "active" && !activeMetric && activeFilterCount === 0 && !search.trim());
+        return <button
+          type="button"
+          key={metric.key}
+          className={`production-metric-card ${selected ? "active" : ""} ${metric.key === "late" || metric.key === "blocked" ? "critical" : ""}`}
+          aria-pressed={selected}
+          onClick={() => onMetricSelect(metric.key)}
+        >
+          <span className={`metric-icon ${metric.tone}`}>{metric.icon}</span>
+          <span className="production-metric-copy"><small>{metric.title}</small><strong>{metric.value}</strong><em>{metric.detail}</em></span>
+          <span className="metric-filter-hint">{metric.key === "installation_today" ? "Abrir agenda" : metric.key === "active" ? "Ver todos" : "Filtrar"}</span>
+        </button>;
+      })}
     </section>
-    <section className="toolbar"><label className="search-field">⌕<input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Buscar por OP, cliente ou serviço…" />{search && <button type="button" className="search-clear" aria-label="Limpar busca" onClick={() => onSearchChange("")}>×</button>}</label><button type="button" className={filtersOpen ? "active" : ""} onClick={onToggleFilters} aria-expanded={filtersOpen}>☷ Filtros {activeFilterCount > 0 && <b>{activeFilterCount}</b>}</button><button type="button" className="sort-button" onClick={onCycleSort} title="Clique para alterar a ordenação">↕ {sortLabels[sortMode]}</button><span>{loading ? "Atualizando…" : `${filtered.length} pedido${filtered.length === 1 ? "" : "s"} encontrado${filtered.length === 1 ? "" : "s"}`}</span></section>
+    <section className="metric-secondary-strip" aria-label="Indicadores complementares">
+      <span><b>{activeOrderCounts.suborders}</b> subpedidos ativos</span>
+      <span><b>{metricSummary.withoutResponsible}</b> sem responsável</span>
+      <span><b>{metricSummary.withoutDate}</b> sem prazo</span>
+      <span><b>{metricSummary.futureInstallations}</b> instalações futuras</span>
+      <span className="metric-live-status">● Atualização em tempo real</span>
+    </section>
+    <section className="toolbar"><label className="search-field">⌕<input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Buscar por OP, cliente ou serviço…" />{search && <button type="button" className="search-clear" aria-label="Limpar busca" onClick={() => onSearchChange("")}>×</button>}</label><button type="button" className={filtersOpen ? "active" : ""} onClick={onToggleFilters} aria-expanded={filtersOpen}>☷ Filtros {activeFilterCount > 0 && <b>{activeFilterCount}</b>}</button><button type="button" className="sort-button" onClick={onCycleSort} title="Clique para alterar a ordenação">↕ {sortLabels[sortMode]}</button>{thumbnailStatusText && <span className={`thumbnail-load-status ${thumbnailProgress.phase}`} aria-live="polite">{thumbnailProgress.phase !== "complete" && <i />} {thumbnailStatusText}</span>}<span>{loading ? "Atualizando…" : `${filtered.length} pedido${filtered.length === 1 ? "" : "s"} encontrado${filtered.length === 1 ? "" : "s"}`}</span></section>
     {filtersOpen && <>
       <button type="button" className="filters-backdrop" aria-label="Fechar filtros" onClick={onCloseFilters} />
       <section className="filters-panel" aria-label="Filtros do Kanban">
@@ -179,18 +288,18 @@ export function KanbanView(props: KanbanViewProps) {
       {visibleSectors.map((sector, sectorIndex) => <article className="sector" key={sector.id} data-sector-index={sectorIndex} data-sector-id={sector.id}>
         <div className="sector-head"><div><i>{String(sector.position).padStart(2, "0")}</i><h2>{sector.name}</h2></div><span>{filtered.filter((order) => order.sector_id === sector.id).length}</span></div>
         <div className="sector-body">{statusesForSector(sector.name).map((status) => <div className={`lane ${dragOverLane === `${sector.id}:${status}` ? "drag-over" : ""}`} key={status} aria-label={`${sector.name} — ${status}`} onDragOver={(event) => { if (!canOperate) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; onDragOverLane(`${sector.id}:${status}`); }} onDrop={() => onDrop(sector.id, status)}>
-          <div className="lane-head"><b><i className={`dot ${statusDotClass(status)}`} />{status}</b><span>{filtered.filter((order) => order.sector_id === sector.id && order.status === statusToDb[status]).length}</span></div>
-          {filtered.filter((order) => order.sector_id === sector.id && order.status === statusToDb[status]).map((order) => <div draggable={canOperate && busyOrderId !== order.id} aria-disabled={!canOperate} onDragStart={(event) => { if (!canOperate) { event.preventDefault(); return; } event.dataTransfer.effectAllowed = "move"; onDragStart(order.id); }} onDragEnd={onDragEnd} onClick={() => onOpenOrder(order, "history")} className={`order ${priorityLabel[order.priority].toLowerCase()} ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-order" : ""}`} key={order.id}>
+          <div className="lane-head"><b><i className={`dot ${statusDotClass(status)}`} />{status}</b><span>{filtered.filter((order) => order.sector_id === sector.id && orderMatchesLane(order, status)).length}</span></div>
+          {filtered.filter((order) => order.sector_id === sector.id && orderMatchesLane(order, status)).map((order) => <div draggable={canOperate && busyOrderId !== order.id} aria-disabled={!canOperate} onDragStart={(event) => { if (!canOperate) { event.preventDefault(); return; } event.dataTransfer.effectAllowed = "move"; onDragStart(order.id); }} onDragEnd={onDragEnd} onClick={() => onOpenOrder(order, "history")} className={`order ${priorityLabel[order.priority].toLowerCase()} ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-order" : ""} ${order.blocked || order.status === "paused" ? "blocked-order" : ""}`} key={order.id}>
             {isAdmin && <button type="button" className="delete-order-button" aria-label={`Apagar OP ${order.op_number}`} title="Apagar pedido" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onDeleteOrder(order); }}>⌫</button>}
             <OrderThumbnail order={order} url={cardImageUrl(order)} onVisible={onThumbnailVisible} onPreview={onPreview} />
-            <div className="order-top"><b>OP {order.op_number}</b><div className="order-badges"><span className={`tag ${priorityLabel[order.priority].toLowerCase()}`}>{priorityLabel[order.priority]}</span></div></div>
+            <div className="order-top"><b>OP {order.op_number}</b><div className="order-badges"><span className={`tag ${priorityLabel[order.priority].toLowerCase()}`}>{priorityLabel[order.priority]}</span>{(order.blocked || order.status === "paused") && <span className="tag blocked">{order.status === "paused" ? "Pausado" : "Bloqueado"}</span>}</div></div>
             <h3>{order.client_name}</h3><p className="order-service">{order.description}</p>
             <div className="order-responsible" title={`Responsável: ${orderResponsibleName(order)}`}><span>{initials(orderResponsibleName(order))}</span><div><small>RESPONSÁVEL</small><b>{orderResponsibleName(order)}</b></div></div>
             <div className={`due order-deadlines ${dueLabel(order.delivery_date).startsWith("Atrasado") ? "late" : ""}`}><span>Inst./entrega: <b>{orderTargetDateLabel(order)}</b></span><small>Produção: {dueLabel(order.delivery_date)}</small></div>
             {canOperate && <div className="workflow-actions"><button type="button" className="move-order-button" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onMoveOrder(order); }}>↪ Mover</button><button type="button" className="finish-order" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onFinishOrder(order); }}>✓ Finalizar</button></div>}
             <footer className="card-actions"><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "history"); }}>↺ Histórico</button><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "comments"); }}>◌ {commentCounts[order.id] || 0} Comentários</button></footer>
           </div>)}
-          {!filtered.some((order) => order.sector_id === sector.id && order.status === statusToDb[status]) && <div className="empty-lane">{canOperate ? "Solte um pedido aqui" : "Nenhum pedido"}</div>}
+          {!filtered.some((order) => order.sector_id === sector.id && orderMatchesLane(order, status)) && <div className="empty-lane">{canOperate ? "Solte um pedido aqui" : "Nenhum pedido"}</div>}
         </div>)}</div>
       </article>)}
       {!loading && hasActiveSearch && !filtered.length && <div className="search-empty"><span>⌕</span><b>Nenhum pedido encontrado</b><p>Tente alterar o termo pesquisado ou limpar os filtros.</p><button type="button" onClick={onClearFilters}>Limpar busca e filtros</button></div>}

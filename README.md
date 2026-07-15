@@ -1,4 +1,4 @@
-# Publicolor PCP 3.1.1
+# Publicolor PCP 3.1.2
 
 Sistema web de planejamento e controle de produção da Publicolor, com Dashboard, Kanban, Pedidos, agenda de instalação/entrega, clientes, atividades, arquivos, histórico e integrações com Supabase e Google Drive.
 
@@ -36,7 +36,7 @@ pnpm test:e2e
 
 ## Atualização do banco
 
-A versão **3.1.1 não exige SQL**. O arquivo abaixo pertence à base 3.1.0 e só deve ser executado caso ainda não tenha sido aplicado:
+A versão **3.1.2 não exige SQL**. O arquivo abaixo pertence à base 3.1.0 e só deve ser executado caso ainda não tenha sido aplicado:
 
 ```text
 SQL-ATUALIZACAO-PUBLICOLOR-3.1.0.sql
@@ -71,7 +71,8 @@ supabase/migrations/20260730010000_observability_and_thumbnail_cache.sql
 
 Leia antes de publicar:
 
-- `COMO-ATUALIZAR-PUBLICOLOR-3.1.1.txt`
+- `COMO-ATUALIZAR-PUBLICOLOR-3.1.2.txt`
+- `COMO-ATUALIZAR-PUBLICOLOR-3.1.1.txt` — referência da versão anterior
 - `COMO-ATUALIZAR-PUBLICOLOR-3.1.0.txt` — somente referência da versão anterior
 - `docs/AMBIENTES-E-DEPLOY.md`
 - `docs/ARQUITETURA-3.1.md`
@@ -82,3 +83,10 @@ Leia antes de publicar:
 O carregamento das miniaturas foi alterado para modo progressivo: somente cartões visíveis ou próximos da tela solicitam imagens. O sistema usa cache local por usuário, limita downloads simultâneos e entrega os WebPs diretamente pelo CDN do Supabase. Em **Configurações**, o administrador pode pré-gerar todas as miniaturas otimizadas.
 
 Consulte `docs/ATUALIZACAO-3.1.1.md` e `COMO-ATUALIZAR-PUBLICOLOR-3.1.1.txt`.
+
+
+## Publicolor PCP 3.1.2
+
+Depois de priorizar as miniaturas visíveis e próximas, o Kanban passa a preparar automaticamente as demais em segundo plano, com duas vagas de baixa prioridade e capacidade reservada para solicitações do usuário. Os indicadores superiores foram reorganizados, tornados clicáveis e adaptados para desktop, tablet e celular.
+
+Consulte `docs/ATUALIZACAO-3.1.2.md` e `COMO-ATUALIZAR-PUBLICOLOR-3.1.2.txt`.
