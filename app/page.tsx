@@ -9,6 +9,7 @@ import { ClientsView } from "@/components/ClientsView";
 import { DataImportExportSettings } from "@/components/DataImportExportSettings";
 import { GoogleDriveSettings } from "@/components/GoogleDriveSettings";
 import { PlatformAdministrationSettings } from "@/components/PlatformAdministrationSettings";
+import { ThumbnailRepairSettings } from "@/components/ThumbnailRepairSettings";
 import { OrderDriveUpload } from "@/components/OrderDriveUpload";
 import { OrderBatchForm, type OrderBatchSubmission } from "@/components/OrderBatchForm";
 import { PdfOrderImporter } from "@/components/PdfOrderImporter";
@@ -2092,6 +2093,7 @@ export default function Home() {
           <article className="settings-card"><span className="settings-icon">▦</span><div><small>SETORES ATIVOS</small><b>{activeSectors.length} setores</b><p>A ordem dos setores segue a configuração do banco.</p></div></article>
           <article className="settings-card"><span className="settings-icon">✓</span><div><small>STATUS DO SISTEMA</small><b>Operacional</b><p>Interface e serviços carregados corretamente.</p></div></article>
         </div>
+        <ThumbnailRepairSettings />
         <PlatformAdministrationSettings />
         <GoogleDriveSettings />
         <DataImportExportSettings orders={orders} clients={clients} sectors={sectors} onImportComplete={() => setReloadToken((current) => current + 1)} />
