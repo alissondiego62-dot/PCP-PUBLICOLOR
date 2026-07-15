@@ -1157,7 +1157,7 @@ export default function Home() {
         .select("id,comment,created_at,user_id,author:profiles!order_comments_user_id_fkey(name,email)")
         .eq("order_id", orderId)
         .order("created_at", { ascending: true }),
-      supabase.from("order_materials").select("id,order_id,material_name,quantity,unit,width,status,availability,purchase_status,purchase_activity_id,available_at,available_by,notes,created_at,updated_at").eq("order_id", orderId).order("created_at"),
+      supabase.from("order_materials").select("id,order_id,material_name,quantity,unit,unit_price,width,status,availability,purchase_status,purchase_activity_id,available_at,available_by,notes,created_at,updated_at").eq("order_id", orderId).order("created_at"),
       supabase.from("order_checklist_items").select("id,order_id,label,category,completed,position,completed_at,created_at").eq("order_id", orderId).order("position"),
       supabase.from("order_files").select("id,order_id,uploaded_by,updated_by,origin,file_name,file_path,file_type,file_size,drive_url,drive_file_id,drive_folder_id,file_category,version,notes,is_approved,drive_modified_at,drive_last_modified_by_name,drive_last_modified_by_email,updated_at,created_at").eq("order_id", orderId).is("removed_from_order_at", null).order("drive_modified_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }),
     ]);
@@ -1194,6 +1194,9 @@ export default function Home() {
     installation_address: "Endereço da instalação", installation_team: "Equipe de instalação",
     installation_vehicle: "Veículo", installation_status: "Status da instalação",
     installation_notes: "Orientações da instalação", installation_completed_at: "Conclusão da instalação",
+    material_name: "Nome do material", material_quantity: "Quantidade do material", material_unit: "Unidade do material",
+    material_unit_price: "Preço unitário do material", material_availability: "Disponibilidade do material",
+    material_purchase_status: "Status da compra do material",
   };
 
   const installationStatusLabel: Record<string, string> = {
@@ -1275,6 +1278,9 @@ export default function Home() {
     }
     if (entries.every((entry) => entry.field_name.startsWith("installation_"))) {
       return "Dados da instalação atualizados";
+    }
+    if (entries.every((entry) => entry.change_group === "materials")) {
+      return "Materiais da OS atualizados";
     }
     return "Informações do pedido atualizadas";
   }
@@ -1392,17 +1398,22 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const materialName = String(form.get("material_name") || "").trim();
+    const quantity = Number(form.get("quantity") || 1);
+    const unit = String(form.get("unit") || "un").trim();
     const availability = String(form.get("availability") || "available") as OrderMaterial["availability"];
     const notes = String(form.get("notes") || "").trim() || null;
-    if (!materialName) return;
+    if (!materialName || !Number.isFinite(quantity) || quantity <= 0 || !unit) {
+      setDetailError("Informe o material, uma quantidade maior que zero e a unidade.");
+      return;
+    }
 
     setWorkspaceBusy(true);
     setDetailError("");
     const { error: materialError } = await supabase.from("order_materials").insert({
       order_id: modal.id,
       material_name: materialName,
-      quantity: 1,
-      unit: "un",
+      quantity,
+      unit,
       status: "planned",
       availability,
       notes,
@@ -1414,7 +1425,7 @@ export default function Home() {
       formElement.reset();
       await loadOrderDetails(modal.id);
       showNotice(availability === "unavailable"
-        ? "Material adicionado e atividade criada no grupo Compras."
+        ? "Material adicionado como subatividade da compra consolidada desta OP."
         : "Material disponível adicionado à OS.");
     }
     setWorkspaceBusy(false);
@@ -1445,6 +1456,15 @@ export default function Home() {
     if (!canOperate || workspaceBusy) return;
     const nextName = window.prompt("Nome do material", material.material_name)?.trim();
     if (!nextName) return;
+    const nextQuantityInput = window.prompt("Quantidade", String(material.quantity || 1));
+    if (nextQuantityInput === null) return;
+    const nextQuantity = Number(nextQuantityInput.replace(",", "."));
+    if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) {
+      setDetailError("Informe uma quantidade maior que zero.");
+      return;
+    }
+    const nextUnit = window.prompt("Unidade (ex.: un, chapa, barra, litro)", material.unit || "un")?.trim();
+    if (!nextUnit) return;
     const nextNotes = window.prompt("Observação opcional", material.notes || "");
     if (nextNotes === null) return;
 
@@ -1452,7 +1472,7 @@ export default function Home() {
     setDetailError("");
     const { error: materialError } = await supabase
       .from("order_materials")
-      .update({ material_name: nextName, notes: nextNotes.trim() || null })
+      .update({ material_name: nextName, quantity: nextQuantity, unit: nextUnit, notes: nextNotes.trim() || null })
       .eq("id", material.id);
 
     if (materialError) {
@@ -2674,13 +2694,13 @@ export default function Home() {
           </div>
           <div className="v3-production-actions">{canOperate && <button type="submit" className="primary" disabled={busyOrderId === modal.id}>{busyOrderId === modal.id ? "Salvando…" : "Salvar produção"}</button>}{canOperate && modal.status !== "completed" && <button type="button" onClick={() => void finishOrder(modal)}>Finalizar ordem</button>}</div>
         </form> : detailTab === "materials" ? <div className="os-workspace-panel material-availability-panel">
-          <div className="os-section-heading"><div><small>DISPONIBILIDADE DA OS</small><h3>Materiais da ordem</h3><p>Informe somente o material e se ele está disponível. Itens indisponíveis geram uma atividade automática em Compras.</p></div><span>{materials.length} item(ns)</span></div>
+          <div className="os-section-heading"><div><small>DISPONIBILIDADE DA OS</small><h3>Materiais da ordem</h3><p>Informe o material, a quantidade, a unidade e a disponibilidade. Itens indisponíveis entram automaticamente na atividade consolidada de Compras da OP.</p></div><span>{materials.length} item(ns)</span></div>
           <div className="os-material-table simplified-material-table">
             <div className="os-table-head"><span>Material</span><span>Disponibilidade</span><span>Compra</span><span>Ações</span></div>
             {materials.map((material) => {
               const purchaseStatus = material.purchase_status ? PURCHASE_STATUS_LABEL[material.purchase_status] : null;
               return <div className="os-table-row material-availability-row" key={material.id}>
-                <div className="material-copy"><b>{material.material_name}</b><small>{material.notes || "Sem observação"}</small></div>
+                <div className="material-copy"><b>{material.material_name}</b><small>{Number(material.quantity).toLocaleString("pt-BR", { maximumFractionDigits: 3 })} {material.unit} · {material.notes || "Sem observação"}</small></div>
                 <select
                   className={`material-availability-select ${material.availability}`}
                   value={material.availability}
@@ -2707,6 +2727,8 @@ export default function Home() {
           {!materials.length && <div className="workspace-empty">Nenhum material cadastrado. Adicione o primeiro item e informe se ele está disponível.</div>}
           {canOperate && <form className="os-inline-form simplified-material-form" onSubmit={addMaterial}>
             <label><span>Material</span><input name="material_name" placeholder="Ex.: Metalom 20 × 20, ACM preto, tinta azul" required /></label>
+            <label><span>Quantidade</span><input name="quantity" type="number" min="0.001" step="0.001" defaultValue="1" required /></label>
+            <label><span>Unidade</span><input name="unit" defaultValue="un" placeholder="un, chapa, barra, litro…" required /></label>
             <label><span>Disponibilidade</span><select name="availability" defaultValue="available"><option value="available">Disponível</option><option value="unavailable">Não disponível</option></select></label>
             <label><span>Observação opcional</span><input name="notes" placeholder="Medida, cor ou especificação" /></label>
             <button type="submit" className="primary" disabled={workspaceBusy}>{workspaceBusy ? "Salvando…" : "Adicionar material"}</button>

@@ -103,6 +103,7 @@ export type OrderMaterial = {
   material_name: string;
   quantity: number;
   unit: string;
+  unit_price: number | null;
   width: number | null;
   status: "planned" | "reserved" | "consumed";
   availability: "available" | "unavailable";
