@@ -1,9 +1,9 @@
 {
   "name": "controle-pedidos-kanban",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "private": true,
   "engines": {
-    "node": ">=22.13.0"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "vinext dev",

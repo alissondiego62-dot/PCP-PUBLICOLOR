@@ -50,3 +50,8 @@ supabase/migrations/20260729010000_publicolor_3_performance_and_thumbnail_views.
 - **Configurações:** inclui sincronização permanente das miniaturas da aba Arquivos.
 
 Consulte `docs/ARQUITETURA.md` e `docs/ATUALIZACAO-3.0.md`.
+
+
+## Publicolor 3.0.2
+
+Correção da cadeia de migrations e do Supabase Preview. Consulte `CORRECAO-SUPABASE-PREVIEW.md` antes do próximo deploy.
