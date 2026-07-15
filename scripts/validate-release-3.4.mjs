@@ -15,6 +15,9 @@ const requiredFiles = [
   "app/configuracoes/page.tsx",
   "components/PcpApp.tsx",
   "components/SystemHealthPanel.tsx",
+  "components/MaterialEditorModal.tsx",
+  "lib/order-materials.ts",
+  "app/release-3-4-1.css",
   "components/OperationalSettingsPanel.tsx",
   "components/AdminAuditPanel.tsx",
   "components/CompletedOrdersView.tsx",
@@ -26,12 +29,12 @@ const requiredFiles = [
   "features/pending/PendingCenter.tsx",
   "hooks/usePcpRealtime.ts",
   "supabase/migrations/20260803010000_publicolor_3_4_foundation_performance_and_operations.sql",
-  "SQL-ATUALIZACAO-PUBLICOLOR-3.4.0.sql",
-  "SQL-VALIDAR-PUBLICOLOR-3.4.0.sql",
-  "docs/ATUALIZACAO-3.4.0.md",
+  "SQL-ATUALIZACAO-PUBLICOLOR-3.4.1.sql",
+  "SQL-VALIDAR-PUBLICOLOR-3.4.1.sql",
+  "docs/ATUALIZACAO-3.4.1.md",
   "docs/AUDITORIA-FINAL-3.4.0.md",
-  "COMO-ATUALIZAR-PUBLICOLOR-3.4.0.txt",
-  "VALIDACAO-PUBLICOLOR-3.4.0.txt",
+  "COMO-ATUALIZAR-PUBLICOLOR-3.4.1.txt",
+  "VALIDACAO-PUBLICOLOR-3.4.1.txt",
 ];
 
 const missing = requiredFiles.filter((file) => !fs.existsSync(path.join(root, file)));
@@ -41,14 +44,14 @@ if (missing.length) {
 }
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-if (packageJson.version !== "3.4.0") {
+if (packageJson.version !== "3.4.1") {
   console.error(`Versão inválida no package.json: ${packageJson.version}`);
   process.exit(1);
 }
 
 const serviceWorker = fs.readFileSync(path.join(root, "public/service-worker.js"), "utf8");
-if (!serviceWorker.includes("v3.4.0")) {
-  console.error("O Service Worker não aponta para o cache 3.4.0.");
+if (!serviceWorker.includes("v3.4.1")) {
+  console.error("O Service Worker não aponta para o cache 3.4.1.");
   process.exit(1);
 }
 

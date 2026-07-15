@@ -59,6 +59,8 @@ import { reportClientEvent } from "@/services/observability-client";
 import { GlobalSearch } from "@/features/search/GlobalSearch";
 import { PendingCenter } from "@/features/pending/PendingCenter";
 import { AppIcon } from "@/components/ui/AppIcon";
+import { MaterialEditorModal } from "@/components/MaterialEditorModal";
+import { ORDER_MATERIAL_COLUMNS, type MaterialEditorSubmission } from "@/lib/order-materials";
 import type { KanbanMetricKey } from "@/features/kanban/KanbanView";
 
 const DashboardView = lazy(() => import("@/features/dashboard/DashboardView").then((module) => ({ default: module.DashboardView })));
@@ -282,6 +284,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   const [changeHistory, setChangeHistory] = useState<OrderChangeEntry[]>([]);
   const [comments, setComments] = useState<CommentEntry[]>([]);
   const [materials, setMaterials] = useState<OrderMaterial[]>([]);
+  const [materialEditor, setMaterialEditor] = useState<OrderMaterial | null>(null);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [orderFiles, setOrderFiles] = useState<OrderFileEntry[]>([]);
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
@@ -1353,7 +1356,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     } else if (tab === "materials") {
       const result = await supabase
         .from("order_materials")
-        .select("id,order_id,material_name,quantity,unit,unit_price,actual_unit_price,purchased_quantity,received_quantity,purchase_order_number,purchase_ordered_at,invoice_number,purchase_document_url,invoice_file_url,receipt_notes,width,status,availability,purchase_status,purchase_activity_id,available_at,available_by,notes,created_at,updated_at")
+        .select(ORDER_MATERIAL_COLUMNS)
         .eq("order_id", orderId)
         .is("deleted_at", null)
         .order("created_at")
@@ -1383,7 +1386,10 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     }
 
     if (detailsError) {
-      setDetailError(`Não foi possível carregar esta aba da OS: ${detailsError.message}`);
+      const schemaHint = tab === "materials" && /column|schema cache|availability|unit_price|purchase_status/i.test(detailsError.message)
+        ? " O banco conectado ainda não possui a estrutura completa de Materiais e Compras. Execute o SQL cumulativo 3.4.1 e atualize a página."
+        : "";
+      setDetailError(`Não foi possível carregar esta aba da OS: ${detailsError.message}.${schemaHint}`);
     } else {
       loaded.add(tab);
       detailLoadedTabsRef.current[orderId] = loaded;
@@ -1668,37 +1674,55 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     setWorkspaceBusy(false);
   }
 
-  async function editMaterial(material: OrderMaterial) {
+  function editMaterial(material: OrderMaterial) {
     if (!canOperate || workspaceBusy) return;
-    const nextName = window.prompt("Nome do material", material.material_name)?.trim();
-    if (!nextName) return;
-    const nextQuantityInput = window.prompt("Quantidade", String(material.quantity || 1));
-    if (nextQuantityInput === null) return;
-    const nextQuantity = Number(nextQuantityInput.replace(",", "."));
-    if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) {
-      setDetailError("Informe uma quantidade maior que zero.");
-      return;
-    }
-    const nextUnit = window.prompt("Unidade (ex.: un, chapa, barra, litro)", material.unit || "un")?.trim();
-    if (!nextUnit) return;
-    const nextNotes = window.prompt("Observação opcional", material.notes || "");
-    if (nextNotes === null) return;
+    setDetailError("");
+    setMaterialEditor(material);
+  }
 
+  async function saveMaterialEditor(submission: MaterialEditorSubmission) {
+    if (!materialEditor || !canOperate || workspaceBusy) return;
     setWorkspaceBusy(true);
     setDetailError("");
-    const { error: materialError } = await supabase
-      .from("order_materials")
-      .update({ material_name: nextName, quantity: nextQuantity, unit: nextUnit, notes: nextNotes.trim() || null })
-      .eq("id", material.id);
+    try {
+      const { error: materialError } = await supabase
+        .from("order_materials")
+        .update(submission.patch)
+        .eq("id", materialEditor.id);
+      if (materialError) throw new Error(`Não foi possível editar o material: ${materialError.message}`);
 
-    if (materialError) {
-      setDetailError(`Não foi possível editar o material: ${materialError.message}`);
-    } else if (modal && modal !== "new") {
-      await loadOrderDetails(modal.id, true);
-      showNotice("Material e atividade vinculada atualizados.");
+      const { data: refreshedMaterial, error: refreshError } = await supabase
+        .from("order_materials")
+        .select(ORDER_MATERIAL_COLUMNS)
+        .eq("id", materialEditor.id)
+        .single();
+      if (refreshError || !refreshedMaterial) throw new Error(`O material foi atualizado, mas não foi possível confirmar os dados: ${refreshError?.message || "erro desconhecido"}`);
+
+      const updatedMaterial = refreshedMaterial as OrderMaterial;
+      if (updatedMaterial.purchase_activity_id && updatedMaterial.purchase_status !== submission.purchaseStatus) {
+        const { error: activityError } = await supabase
+          .from("activities")
+          .update({
+            activity_status: submission.purchaseStatus,
+            completed: submission.purchaseStatus === "finalized",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", updatedMaterial.purchase_activity_id);
+        if (activityError) throw new Error(`O material foi salvo, mas o status da atividade não pôde ser atualizado: ${activityError.message}`);
+      }
+
+      if (modal && modal !== "new") await loadOrderDetails(modal.id, true);
+      setMaterialEditor(null);
+      showNotice("Todos os dados do material e da atividade vinculada foram atualizados.");
+    } catch (saveError) {
+      const message = saveError instanceof Error ? saveError.message : "Não foi possível editar o material.";
+      setDetailError(message);
+      throw new Error(message);
+    } finally {
+      setWorkspaceBusy(false);
     }
-    setWorkspaceBusy(false);
   }
+
 
   async function deleteMaterial(material: OrderMaterial) {
     if (!canOperate || workspaceBusy) return;
@@ -2960,7 +2984,15 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
             {materials.map((material) => {
               const purchaseStatus = material.purchase_status ? PURCHASE_STATUS_LABEL[material.purchase_status] : null;
               return <div className="os-table-row material-availability-row" key={material.id}>
-                <div className="material-copy"><b>{material.material_name}</b><small>{Number(material.quantity).toLocaleString("pt-BR", { maximumFractionDigits: 3 })} {material.unit} · {material.notes || "Sem observação"}</small></div>
+                <div className="material-copy">
+                  <b>{material.material_name}</b>
+                  <div className="material-inline-meta">
+                    <span>{Number(material.quantity).toLocaleString("pt-BR", { maximumFractionDigits: 3 })} {material.unit}</span>
+                    {material.width != null && <span>Medida: {Number(material.width).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</span>}
+                    <span>{material.status === "reserved" ? "Reservado" : material.status === "consumed" ? "Consumido" : "Planejado"}</span>
+                  </div>
+                  <small>{material.notes || "Sem observação"}</small>
+                </div>
                 <select
                   className={`material-availability-select ${material.availability}`}
                   value={material.availability}
@@ -2978,9 +3010,9 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
                   {(material.actual_unit_price ?? material.unit_price) != null && <small>Valor: {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(material.actual_unit_price ?? material.unit_price) * Number(material.purchased_quantity ?? material.quantity))}</small>}
                 </div>
                 <div className="material-row-actions">
-                  {material.purchase_activity_id && <button type="button" onClick={() => { setModal(null); navigateTo("activities"); }}>Abrir Compras</button>}
-                  <button type="button" onClick={() => void editMaterial(material)} disabled={!canOperate || workspaceBusy}>Editar</button>
-                  <button type="button" className="danger" onClick={() => void deleteMaterial(material)} disabled={!canOperate || workspaceBusy}>Excluir</button>
+                  {material.purchase_activity_id && <button type="button" className="material-icon-action" onClick={() => { setModal(null); navigateTo("activities"); }} title="Abrir Atividades e Compras" aria-label={`Abrir compra de ${material.material_name}`}><AppIcon name="tasks" /></button>}
+                  <button type="button" className="material-icon-action" onClick={() => editMaterial(material)} disabled={!canOperate || workspaceBusy} title="Editar todos os dados" aria-label={`Editar ${material.material_name}`}><AppIcon name="edit" /></button>
+                  <button type="button" className="material-icon-action danger" onClick={() => void deleteMaterial(material)} disabled={!canOperate || workspaceBusy} title="Excluir material" aria-label={`Excluir ${material.material_name}`}><AppIcon name="trash" /></button>
                 </div>
               </div>;
             })}
@@ -3080,6 +3112,13 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         </div>}
       </>}
     </div></div>}
+    {materialEditor && <MaterialEditorModal
+      material={materialEditor}
+      busy={workspaceBusy}
+      contextLabel={modal && modal !== "new" ? `OP ${modal.op_number} · MATERIAIS` : "MATERIAIS DA OS"}
+      onClose={() => !workspaceBusy && setMaterialEditor(null)}
+      onSave={saveMaterialEditor}
+    />}
     {imagePreview && <div className="overlay image-preview-overlay" onMouseDown={() => setImagePreview(null)}>
       <div className="image-preview-modal" role="dialog" aria-modal="true" aria-label="Visualização ampliada da miniatura" onMouseDown={(event) => event.stopPropagation()}>
         <header className="image-preview-toolbar">

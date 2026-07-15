@@ -1,8 +1,10 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent, type ReactNode, type SetStateAction } from "react";
-import type { DetailTab, Order, Profile, PurchaseActivityStatus } from "@/lib/pcp-types";
+import type { DetailTab, Order, OrderMaterial, Profile, PurchaseActivityStatus } from "@/lib/pcp-types";
 import { supabase } from "@/lib/supabase";
+import { MaterialEditorModal } from "@/components/MaterialEditorModal";
+import { ORDER_MATERIAL_COLUMNS, type MaterialEditorSubmission } from "@/lib/order-materials";
 
 type ActivityPriority = "low" | "normal" | "high" | "urgent";
 type ActivityType = "general" | "material_purchase" | "purchase_order";
@@ -39,24 +41,6 @@ type ActivityItem = {
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
-};
-
-type PurchaseMaterial = {
-  id: string;
-  order_id: string;
-  material_name: string;
-  quantity: number;
-  unit: string;
-  unit_price: number | null;
-  actual_unit_price: number | null;
-  purchased_quantity: number | null;
-  received_quantity: number | null;
-  purchase_order_number: string | null;
-  purchase_ordered_at: string | null;
-  invoice_number: string | null;
-  purchase_document_url: string | null;
-  invoice_file_url: string | null;
-  receipt_notes: string | null;
 };
 
 type TaskEditorState = {
@@ -233,7 +217,7 @@ export function ActivitiesView({
 }) {
   const [groups, setGroups] = useState<ActivityGroup[]>([]);
   const [items, setItems] = useState<ActivityItem[]>([]);
-  const [purchaseMaterials, setPurchaseMaterials] = useState<Map<string, PurchaseMaterial>>(new Map());
+  const [purchaseMaterials, setOrderMaterials] = useState<Map<string, OrderMaterial>>(new Map());
   const [pricingDrafts, setPricingDrafts] = useState<Record<string, PricingDraft>>({});
   const [pricingSaveState, setPricingSaveState] = useState<Record<string, PricingSaveStatus>>({});
   const [materialNameDrafts, setMaterialNameDrafts] = useState<Record<string, string>>({});
@@ -254,7 +238,7 @@ export function ActivitiesView({
   const [groupEditor, setGroupEditor] = useState<GroupEditorState | null>(null);
   const [taskEditor, setTaskEditor] = useState<TaskEditorState | null>(null);
   const [statusCascade, setStatusCascade] = useState<StatusCascadeState | null>(null);
-  const [purchaseDetailMaterial, setPurchaseDetailMaterial] = useState<PurchaseMaterial | null>(null);
+  const [purchaseDetailMaterial, setPurchaseDetailMaterial] = useState<OrderMaterial | null>(null);
   const pricingDraftsRef = useRef<Record<string, PricingDraft>>({});
   const materialNameDraftsRef = useRef<Record<string, string>>({});
   const pricingTimersRef = useRef<Map<string, number>>(new Map());
@@ -306,19 +290,22 @@ export function ActivitiesView({
     const nextItems = (itemRows || []) as ActivityItem[];
     const materialIds = Array.from(new Set(nextItems.map((item) => item.order_material_id).filter((value): value is string => Boolean(value))));
     const materialResult = materialIds.length
-      ? await supabase.from("order_materials").select("id,order_id,material_name,quantity,unit,unit_price,actual_unit_price,purchased_quantity,received_quantity,purchase_order_number,purchase_ordered_at,invoice_number,purchase_document_url,invoice_file_url,receipt_notes").in("id", materialIds).is("deleted_at", null)
+      ? await supabase.from("order_materials").select(ORDER_MATERIAL_COLUMNS).in("id", materialIds).is("deleted_at", null)
       : { data: [], error: null };
 
     if (materialResult.error) {
-      setError(`As atividades foram carregadas, mas os dados de compra não puderam ser consultados: ${materialResult.error.message}`);
+      const schemaHint = /column|schema cache|availability|unit_price|purchase_status/i.test(materialResult.error.message)
+        ? " O banco conectado ainda não possui a estrutura completa de Materiais e Compras. Execute o SQL cumulativo 3.4.1."
+        : "";
+      setError(`As atividades foram carregadas, mas os dados de compra não puderam ser consultados: ${materialResult.error.message}.${schemaHint}`);
     }
 
-    const materialMap = new Map<string, PurchaseMaterial>();
-    for (const material of (materialResult.data || []) as PurchaseMaterial[]) materialMap.set(material.id, material);
+    const materialMap = new Map<string, OrderMaterial>();
+    for (const material of (materialResult.data || []) as OrderMaterial[]) materialMap.set(material.id, material);
 
     setGroups((groupRows || []) as ActivityGroup[]);
     setItems(nextItems);
-    setPurchaseMaterials(materialMap);
+    setOrderMaterials(materialMap);
     setMaterialNameDrafts((current) => {
       const next = { ...current };
       for (const material of materialMap.values()) {
@@ -360,17 +347,17 @@ export function ActivitiesView({
           return exists ? current.map((item) => item.id === next.id ? next : item) : [...current, next];
         });
         if (next?.order_material_id) {
-          void supabase.from("order_materials").select("id,order_id,material_name,quantity,unit,unit_price,actual_unit_price,purchased_quantity,received_quantity,purchase_order_number,purchase_ordered_at,invoice_number,purchase_document_url,invoice_file_url,receipt_notes").eq("id", next.order_material_id).is("deleted_at", null).maybeSingle().then(({ data }) => {
+          void supabase.from("order_materials").select(ORDER_MATERIAL_COLUMNS).eq("id", next.order_material_id).is("deleted_at", null).maybeSingle().then(({ data }) => {
             if (!data) return;
-            setPurchaseMaterials((current) => new Map(current).set(data.id, data as PurchaseMaterial));
+            setOrderMaterials((current) => new Map(current).set(data.id, data as OrderMaterial));
           });
         }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "order_materials" }, (payload) => {
         const event = payload.eventType;
-        const next = payload.new as PurchaseMaterial & { deleted_at?: string | null };
-        const previous = payload.old as Partial<PurchaseMaterial>;
-        setPurchaseMaterials((current) => {
+        const next = payload.new as OrderMaterial & { deleted_at?: string | null };
+        const previous = payload.old as Partial<OrderMaterial>;
+        setOrderMaterials((current) => {
           const map = new Map(current);
           const id = previous.id || next.id;
           if (event === "DELETE" || next?.deleted_at) map.delete(id); else if (map.has(next.id)) map.set(next.id, next);
@@ -637,7 +624,7 @@ export function ActivitiesView({
     requestStatusChange(item, item.completed ? "pending" : "finalized");
   }
 
-  function getPricingDraft(material: PurchaseMaterial) {
+  function getPricingDraft(material: OrderMaterial) {
     return pricingDraftsRef.current[material.id] || {
       quantity: String(material.quantity),
       unit: material.unit,
@@ -655,7 +642,7 @@ export function ActivitiesView({
     return { quantity, unit, unitPrice, error: "" } as const;
   }
 
-  async function persistPurchasePricing(material: PurchaseMaterial, draft: PricingDraft, announceError = false) {
+  async function persistPurchasePricing(material: OrderMaterial, draft: PricingDraft, announceError = false) {
     if (!canOperate) return false;
     const timer = pricingTimersRef.current.get(material.id);
     if (timer !== undefined) window.clearTimeout(timer);
@@ -692,7 +679,7 @@ export function ActivitiesView({
       return false;
     }
 
-    setPurchaseMaterials((current) => {
+    setOrderMaterials((current) => {
       const next = new Map(current);
       next.set(material.id, {
         ...latestMaterial,
@@ -706,7 +693,7 @@ export function ActivitiesView({
     return true;
   }
 
-  function updatePricingDraft(material: PurchaseMaterial, field: keyof PricingDraft, value: string) {
+  function updatePricingDraft(material: OrderMaterial, field: keyof PricingDraft, value: string) {
     const currentDraft = getPricingDraft(material);
     const nextDraft = { ...currentDraft, [field]: value };
     pricingDraftsRef.current = { ...pricingDraftsRef.current, [material.id]: nextDraft };
@@ -722,11 +709,11 @@ export function ActivitiesView({
     pricingTimersRef.current.set(material.id, timer);
   }
 
-  function flushPurchasePricing(material: PurchaseMaterial, announceError = false) {
+  function flushPurchasePricing(material: OrderMaterial, announceError = false) {
     return persistPurchasePricing(material, getPricingDraft(material), announceError);
   }
 
-  async function persistMaterialName(item: ActivityItem, material: PurchaseMaterial, announceError = false) {
+  async function persistMaterialName(item: ActivityItem, material: OrderMaterial, announceError = false) {
     if (!canOperate) return false;
     const timer = materialNameTimersRef.current.get(material.id);
     if (timer !== undefined) window.clearTimeout(timer);
@@ -765,7 +752,7 @@ export function ActivitiesView({
       return false;
     }
 
-    setPurchaseMaterials((current) => {
+    setOrderMaterials((current) => {
       const next = new Map(current);
       next.set(material.id, { ...material, material_name: nextName });
       return next;
@@ -776,7 +763,7 @@ export function ActivitiesView({
     return true;
   }
 
-  function updateMaterialNameDraft(item: ActivityItem, material: PurchaseMaterial, value: string) {
+  function updateMaterialNameDraft(item: ActivityItem, material: OrderMaterial, value: string) {
     const nextDrafts = { ...materialNameDraftsRef.current, [material.id]: value };
     materialNameDraftsRef.current = nextDrafts;
     setMaterialNameDrafts(nextDrafts);
@@ -797,7 +784,7 @@ export function ActivitiesView({
     });
   }
 
-  function handlePricingKeyDown(event: KeyboardEvent<HTMLInputElement>, item: ActivityItem, material: PurchaseMaterial, field: keyof PricingDraft) {
+  function handlePricingKeyDown(event: KeyboardEvent<HTMLInputElement>, item: ActivityItem, material: OrderMaterial, field: keyof PricingDraft) {
     if (event.key !== "Enter") return;
     event.preventDefault();
     void flushPurchasePricing(material, true);
@@ -929,34 +916,43 @@ export function ActivitiesView({
     return `${item.title} ${item.description || ""} ${material?.material_name || ""} ${activityStatusLabel[item.activity_status]}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch);
   }
 
-  async function savePurchaseDetails(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveMaterialEditorFromActivities(submission: MaterialEditorSubmission) {
     if (!purchaseDetailMaterial || !canOperate) return;
-    const form = new FormData(event.currentTarget);
-    const decimal = (name: string) => { const raw = String(form.get(name) || "").trim().replace(",", "."); return raw ? Number(raw) : null; };
-    const actualUnitPrice = decimal("actual_unit_price");
-    const purchasedQuantity = decimal("purchased_quantity");
-    const receivedQuantity = decimal("received_quantity");
-    if ([actualUnitPrice, purchasedQuantity, receivedQuantity].some((value) => value !== null && (!Number.isFinite(value) || value < 0))) {
-      setError("Valores de compra e recebimento inválidos."); return;
+    const material = purchaseDetailMaterial;
+    setBusyId(`purchase-detail-${material.id}`);
+    setError("");
+    try {
+      const { error: materialError } = await supabase
+        .from("order_materials")
+        .update(submission.patch)
+        .eq("id", material.id);
+      if (materialError) throw new Error(`Não foi possível salvar o material: ${materialError.message}`);
+
+      const linkedActivity = items.find((item) => item.order_material_id === material.id);
+      if (linkedActivity && linkedActivity.activity_status !== submission.purchaseStatus) {
+        const { error: activityError } = await supabase
+          .from("activities")
+          .update({
+            activity_status: submission.purchaseStatus,
+            completed: submission.purchaseStatus === "finalized",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", linkedActivity.id);
+        if (activityError) throw new Error(`O material foi salvo, mas o status da atividade não pôde ser atualizado: ${activityError.message}`);
+      }
+
+      await loadActivities(true);
+      setPurchaseDetailMaterial(null);
+      setNotice("Material, compra e dados da OS atualizados.");
+    } catch (saveError) {
+      const message = saveError instanceof Error ? saveError.message : "Não foi possível salvar o material.";
+      setError(message);
+      throw new Error(message);
+    } finally {
+      setBusyId("");
     }
-    setBusyId(`purchase-detail-${purchaseDetailMaterial.id}`);
-    const patch = {
-      actual_unit_price: actualUnitPrice,
-      purchased_quantity: purchasedQuantity,
-      received_quantity: receivedQuantity,
-      purchase_order_number: String(form.get("purchase_order_number") || "").trim() || null,
-      purchase_ordered_at: String(form.get("purchase_ordered_at") || "").trim() ? new Date(String(form.get("purchase_ordered_at"))).toISOString() : null,
-      invoice_number: String(form.get("invoice_number") || "").trim() || null,
-      purchase_document_url: String(form.get("purchase_document_url") || "").trim() || null,
-      invoice_file_url: String(form.get("invoice_file_url") || "").trim() || null,
-      receipt_notes: String(form.get("receipt_notes") || "").trim() || null,
-    };
-    const { data, error: updateError } = await supabase.from("order_materials").update(patch).eq("id", purchaseDetailMaterial.id).select("id,order_id,material_name,quantity,unit,unit_price,actual_unit_price,purchased_quantity,received_quantity,purchase_order_number,purchase_ordered_at,invoice_number,purchase_document_url,invoice_file_url,receipt_notes").single();
-    if (updateError || !data) setError(`Não foi possível salvar os detalhes da compra: ${updateError?.message || "erro desconhecido"}`);
-    else { setPurchaseMaterials((current) => new Map(current).set(data.id, data as PurchaseMaterial)); setPurchaseDetailMaterial(null); setNotice("Detalhes da compra e do recebimento salvos."); }
-    setBusyId("");
   }
+
 
   function renderTask(item: ActivityItem, childItems: ActivityItem[], showCompleted: boolean, isSubtask = false) {
     const assigned = item.assigned_to ? profileById.get(item.assigned_to) : null;
@@ -1135,8 +1131,8 @@ export function ActivitiesView({
           </button>}
 
           {canOperate && !isSubtask && item.activity_type === "general" && <button type="button" className="activity-icon-button" onClick={() => openNewTask(item.group_id, item.id)} title="Adicionar subatividade" aria-label={`Adicionar subatividade em ${item.title}`}><ActivityIcon name="add" /></button>}
-          {canOperate && item.activity_type === "material_purchase" && material && <button type="button" className="activity-icon-button" onClick={() => setPurchaseDetailMaterial(material)} title="Detalhes da compra e recebimento" aria-label={`Detalhes da compra de ${material.material_name}`}><ActivityIcon name="info" /></button>}
-          {canOperate && <button type="button" className="activity-icon-button" onClick={() => { setContinuousAddCount(0); setTaskEditor({ mode: "edit", item, groupId: item.group_id, parentId: item.parent_id || "" }); }} title="Editar atividade" aria-label={`Editar ${item.title}`}><ActivityIcon name="edit" /></button>}
+          {canOperate && item.activity_type === "material_purchase" && material && <button type="button" className="activity-icon-button" onClick={() => setPurchaseDetailMaterial(material)} title="Editar todos os dados do material" aria-label={`Editar todos os dados de ${material.material_name}`}><ActivityIcon name="edit" /></button>}
+          {canOperate && item.activity_type === "general" && <button type="button" className="activity-icon-button" onClick={() => { setContinuousAddCount(0); setTaskEditor({ mode: "edit", item, groupId: item.group_id, parentId: item.parent_id || "" }); }} title="Editar atividade" aria-label={`Editar ${item.title}`}><ActivityIcon name="edit" /></button>}
           {canOperate && (item.activity_type === "general"
             ? <button type="button" className="activity-icon-button danger" onClick={() => void deleteTask(item)} disabled={busyId === item.id} title="Excluir atividade" aria-label={`Excluir ${item.title}`}><ActivityIcon name="delete" /></button>
             : <span className="activity-managed-label activity-managed-icon" title="Gerenciada automaticamente pela OS" aria-label="Gerenciada automaticamente pela OS"><ActivityIcon name="lock" /></span>)}
@@ -1231,23 +1227,13 @@ export function ActivitiesView({
     </div>}
     {viewMode === "completed" && items.filter((item) => item.completed).length < completedTotal && <div className="pagination-load-more"><button type="button" onClick={() => setCompletedLimit((value) => value + 100)}>Carregar mais finalizadas</button><span>{items.filter((item) => item.completed).length} de {completedTotal}</span></div>}
 
-    {purchaseDetailMaterial && <div className="overlay activities-overlay" onMouseDown={() => !busyId && setPurchaseDetailMaterial(null)}><form className="modal activity-editor-modal purchase-detail-modal" onSubmit={savePurchaseDetails} onMouseDown={(event) => event.stopPropagation()}>
-      <button type="button" className="close" aria-label="Fechar" onClick={() => setPurchaseDetailMaterial(null)} disabled={Boolean(busyId)}>×</button>
-      <p className="eyebrow">COMPRA E RECEBIMENTO</p><h2>{purchaseDetailMaterial.material_name}</h2><p>Registre pedido, valor efetivo e recebimento parcial sem incluir fornecedores ou cotações.</p>
-      <div className="activity-editor-grid purchase-detail-grid">
-        <label>Quantidade comprada<input name="purchased_quantity" inputMode="decimal" defaultValue={purchaseDetailMaterial.purchased_quantity ?? purchaseDetailMaterial.quantity}/></label>
-        <label>Quantidade recebida<input name="received_quantity" inputMode="decimal" defaultValue={purchaseDetailMaterial.received_quantity ?? ""}/></label>
-        <label>Valor unitário efetivo<input name="actual_unit_price" inputMode="decimal" defaultValue={purchaseDetailMaterial.actual_unit_price ?? ""} placeholder="0,00"/></label>
-        <label>Número do pedido<input name="purchase_order_number" defaultValue={purchaseDetailMaterial.purchase_order_number || ""}/></label>
-        <label>Data do pedido<input type="datetime-local" name="purchase_ordered_at" defaultValue={purchaseDetailMaterial.purchase_ordered_at ? new Date(purchaseDetailMaterial.purchase_ordered_at).toISOString().slice(0,16) : ""}/></label>
-        <label>Número da nota fiscal<input name="invoice_number" defaultValue={purchaseDetailMaterial.invoice_number || ""}/></label>
-        <label className="wide">Link do comprovante<input type="url" name="purchase_document_url" defaultValue={purchaseDetailMaterial.purchase_document_url || ""} placeholder="https://..."/></label>
-        <label className="wide">Link da nota fiscal<input type="url" name="invoice_file_url" defaultValue={purchaseDetailMaterial.invoice_file_url || ""} placeholder="https://..."/></label>
-        <label className="wide">Observação do recebimento<textarea name="receipt_notes" defaultValue={purchaseDetailMaterial.receipt_notes || ""} placeholder="Ex.: 4 de 6 barras recebidas; restante previsto para amanhã."/></label>
-      </div>
-      <div className="purchase-receipt-progress"><span>Recebido</span><b>{Number(purchaseDetailMaterial.received_quantity || 0)} de {Number(purchaseDetailMaterial.purchased_quantity ?? purchaseDetailMaterial.quantity)} {purchaseDetailMaterial.unit}</b></div>
-      <div className="modal-actions"><button type="button" className="secondary" onClick={() => setPurchaseDetailMaterial(null)}>Cancelar</button><button type="submit" className="primary" disabled={Boolean(busyId)}>{busyId ? "Salvando…" : "Salvar detalhes"}</button></div>
-    </form></div>}
+    {purchaseDetailMaterial && <MaterialEditorModal
+      material={purchaseDetailMaterial}
+      busy={Boolean(busyId)}
+      contextLabel="ATIVIDADES E COMPRAS"
+      onClose={() => !busyId && setPurchaseDetailMaterial(null)}
+      onSave={saveMaterialEditorFromActivities}
+    />}
 
     {statusCascade && <div className="overlay activities-overlay" onMouseDown={() => !busyId && setStatusCascade(null)}><div className="modal activity-status-cascade-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
       <button type="button" className="close" aria-label="Fechar" onClick={() => setStatusCascade(null)} disabled={Boolean(busyId)}>×</button>

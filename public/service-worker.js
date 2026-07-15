@@ -1,5 +1,5 @@
-const SHELL_CACHE = "publicolor-pcp-shell-v3.4.0";
-const RUNTIME_CACHE = "publicolor-pcp-runtime-v3.4.0";
+const SHELL_CACHE = "publicolor-pcp-shell-v3.4.1";
+const RUNTIME_CACHE = "publicolor-pcp-runtime-v3.4.1";
 const THUMBNAIL_CACHE_PREFIX = "publicolor-order-thumbnails-v2";
 const STATIC_ASSETS = [
   "/",
