@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import type { DbStatus, DeadlineFilter, Order, Priority, Sector, SortMode, UiStatus } from "@/lib/pcp-types";
 import { priorityLabel, statusDotClass, statusesForSector, statusToDb } from "@/lib/pcp-config";
@@ -20,6 +21,59 @@ function orderTargetDateLabel(order: Order) {
 }
 function isPdfPageThumbnailPath(path: string | null | undefined) {
   return Boolean(path?.includes("/pdf-pages/") || driveThumbnailFileId(path));
+}
+
+
+function OrderThumbnail({
+  order,
+  url,
+  onVisible,
+  onPreview,
+}: {
+  order: Order;
+  url: string;
+  onVisible: (order: Order) => void;
+  onPreview: (order: Order, url: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const hasThumbnail = Boolean(order.main_image_path?.trim());
+
+  useEffect(() => {
+    if (!hasThumbnail || url) return;
+    const element = containerRef.current;
+    if (!element || typeof IntersectionObserver === "undefined") {
+      onVisible(order);
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      onVisible(order);
+    }, { rootMargin: "360px 240px", threshold: 0.01 });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [hasThumbnail, onVisible, order, url]);
+
+  if (url) {
+    return <button
+      type="button"
+      className={`order-thumbnail ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-thumbnail" : ""}`}
+      aria-label={`Ampliar miniatura da OP ${order.op_number}`}
+      title="Clique para ampliar"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => { event.stopPropagation(); onPreview(order, url); }}
+    ><img src={url} alt={`Miniatura da OP ${order.op_number}`} width={160} height={160} decoding="async" /></button>;
+  }
+
+  return <div
+    ref={containerRef}
+    className={`order-thumbnail ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-thumbnail" : ""} ${hasThumbnail ? "thumbnail-loading" : ""}`}
+  ><div className="order-thumbnail-empty" aria-label={hasThumbnail ? "Miniatura sendo carregada" : "Pedido sem miniatura"}>
+    <span>{hasThumbnail ? "◌" : "PNG"}</span>
+    <small>{hasThumbnail ? "Carregando…" : "Sem miniatura"}</small>
+  </div></div>;
 }
 
 export type KanbanViewProps = {
@@ -72,6 +126,7 @@ export type KanbanViewProps = {
   onOpenOrder: (order: Order, tab: "history" | "comments") => void;
   onDeleteOrder: (order: Order) => void;
   onPreview: (order: Order, url: string) => void;
+  onThumbnailVisible: (order: Order) => void;
   onMoveOrder: (order: Order) => void;
   onFinishOrder: (order: Order) => void;
 };
@@ -86,7 +141,7 @@ export function KanbanView(props: KanbanViewProps) {
     onCloseFilters, onCycleSort, onSectorFilterChange, onStatusFilterChange, onPriorityFilterChange,
     onResponsibleFilterChange, onDeadlineFilterChange, onClearFilters, onScrollToSector,
     onTopScroll, onBoardScroll, onDragStart, onDragEnd, onDragOverLane, onDrop, onOpenOrder,
-    onDeleteOrder, onPreview, onMoveOrder, onFinishOrder,
+    onDeleteOrder, onPreview, onThumbnailVisible, onMoveOrder, onFinishOrder,
   } = props;
 
   return <>
@@ -127,7 +182,7 @@ export function KanbanView(props: KanbanViewProps) {
           <div className="lane-head"><b><i className={`dot ${statusDotClass(status)}`} />{status}</b><span>{filtered.filter((order) => order.sector_id === sector.id && order.status === statusToDb[status]).length}</span></div>
           {filtered.filter((order) => order.sector_id === sector.id && order.status === statusToDb[status]).map((order) => <div draggable={canOperate && busyOrderId !== order.id} aria-disabled={!canOperate} onDragStart={(event) => { if (!canOperate) { event.preventDefault(); return; } event.dataTransfer.effectAllowed = "move"; onDragStart(order.id); }} onDragEnd={onDragEnd} onClick={() => onOpenOrder(order, "history")} className={`order ${priorityLabel[order.priority].toLowerCase()} ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-order" : ""}`} key={order.id}>
             {isAdmin && <button type="button" className="delete-order-button" aria-label={`Apagar OP ${order.op_number}`} title="Apagar pedido" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onDeleteOrder(order); }}>⌫</button>}
-            {cardImageUrl(order) ? <button type="button" className={`order-thumbnail ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-thumbnail" : ""}`} aria-label={`Ampliar miniatura da OP ${order.op_number}`} title="Clique para ampliar" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onPreview(order, cardImageUrl(order)); }}><img src={cardImageUrl(order)} alt={`Miniatura da OP ${order.op_number}`} width={160} height={160} loading="lazy" /></button> : <div className={`order-thumbnail ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-thumbnail" : ""}`}><div className="order-thumbnail-empty" aria-label="Pedido sem miniatura"><span>PNG</span><small>Sem miniatura</small></div></div>}
+            <OrderThumbnail order={order} url={cardImageUrl(order)} onVisible={onThumbnailVisible} onPreview={onPreview} />
             <div className="order-top"><b>OP {order.op_number}</b><div className="order-badges"><span className={`tag ${priorityLabel[order.priority].toLowerCase()}`}>{priorityLabel[order.priority]}</span></div></div>
             <h3>{order.client_name}</h3><p className="order-service">{order.description}</p>
             <div className="order-responsible" title={`Responsável: ${orderResponsibleName(order)}`}><span>{initials(orderResponsibleName(order))}</span><div><small>RESPONSÁVEL</small><b>{orderResponsibleName(order)}</b></div></div>

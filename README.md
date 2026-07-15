@@ -1,4 +1,4 @@
-# Publicolor PCP 3.1.0
+# Publicolor PCP 3.1.1
 
 Sistema web de planejamento e controle de produção da Publicolor, com Dashboard, Kanban, Pedidos, agenda de instalação/entrega, clientes, atividades, arquivos, histórico e integrações com Supabase e Google Drive.
 
@@ -36,7 +36,7 @@ pnpm test:e2e
 
 ## Atualização do banco
 
-Execute primeiro em homologação e depois em produção:
+A versão **3.1.1 não exige SQL**. O arquivo abaixo pertence à base 3.1.0 e só deve ser executado caso ainda não tenha sido aplicado:
 
 ```text
 SQL-ATUALIZACAO-PUBLICOLOR-3.1.0.sql
@@ -71,7 +71,14 @@ supabase/migrations/20260730010000_observability_and_thumbnail_cache.sql
 
 Leia antes de publicar:
 
-- `COMO-ATUALIZAR-PUBLICOLOR-3.1.0.txt`
+- `COMO-ATUALIZAR-PUBLICOLOR-3.1.1.txt`
+- `COMO-ATUALIZAR-PUBLICOLOR-3.1.0.txt` — somente referência da versão anterior
 - `docs/AMBIENTES-E-DEPLOY.md`
 - `docs/ARQUITETURA-3.1.md`
 - `docs/RELATORIO-IMPLEMENTACAO-3.1.0.md`
+
+## Publicolor PCP 3.1.1
+
+O carregamento das miniaturas foi alterado para modo progressivo: somente cartões visíveis ou próximos da tela solicitam imagens. O sistema usa cache local por usuário, limita downloads simultâneos e entrega os WebPs diretamente pelo CDN do Supabase. Em **Configurações**, o administrador pode pré-gerar todas as miniaturas otimizadas.
+
+Consulte `docs/ATUALIZACAO-3.1.1.md` e `COMO-ATUALIZAR-PUBLICOLOR-3.1.1.txt`.

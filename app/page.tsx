@@ -62,7 +62,7 @@ import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { usePcpRealtime } from "@/hooks/usePcpRealtime";
 import { useObservability } from "@/hooks/useObservability";
 import { loadOfflineSnapshot, saveOfflineSnapshot } from "@/lib/offline-snapshot";
-import { fetchCachedOrderThumbnails, fetchOptimizedOrderThumbnail } from "@/services/order-thumbnails";
+import { fetchOptimizedOrderThumbnail } from "@/services/order-thumbnails";
 import { reportClientEvent } from "@/services/observability-client";
 
 const DEFAULT_CONSULTANTS = [
@@ -300,6 +300,7 @@ export default function Home() {
   const initialDataLoadedRef = useRef(false);
   const imageUrlsRef = useRef<Record<string, string>>({});
   const imagePathsRef = useRef<Record<string, string>>({});
+  const thumbnailRequestsRef = useRef<Set<string>>(new Set());
   const [boardScrollWidth, setBoardScrollWidth] = useState(0);
   const isOnline = useOnlineStatus();
   useObservability();
@@ -460,6 +461,31 @@ export default function Home() {
     if (!user) return;
     let active = true;
 
+    const retainLoadedImages = (sourceOrders: Order[]) => {
+      const paths = new Map(
+        sourceOrders
+          .filter((order) => Boolean(order.main_image_path?.trim()))
+          .map((order) => [order.id, order.main_image_path!.trim()]),
+      );
+
+      setImageUrls((current) => {
+        const next: Record<string, string> = {};
+        const nextPaths: Record<string, string> = {};
+        Object.entries(current).forEach(([orderId, url]) => {
+          const path = paths.get(orderId);
+          if (path && imagePathsRef.current[orderId] === path) {
+            next[orderId] = url;
+            nextPaths[orderId] = path;
+          } else if (url.startsWith("blob:")) {
+            URL.revokeObjectURL(url);
+          }
+        });
+        imageUrlsRef.current = next;
+        imagePathsRef.current = nextPaths;
+        return next;
+      });
+    };
+
     const applySnapshot = async () => {
       const snapshot = await loadOfflineSnapshot(user.id).catch(() => null);
       if (!active || !snapshot) return false;
@@ -468,65 +494,13 @@ export default function Home() {
       setClients(snapshot.clients);
       setProfiles(snapshot.profiles);
 
-      const nextImageUrls = await fetchCachedOrderThumbnails(snapshot.orders);
-      setImageUrls((current) => {
-        Object.entries(current).forEach(([orderId, url]) => {
-          if (url.startsWith("blob:") && nextImageUrls[orderId] !== url) URL.revokeObjectURL(url);
-        });
-        imageUrlsRef.current = nextImageUrls;
-        imagePathsRef.current = Object.fromEntries(snapshot.orders.filter((order) => Boolean(order.main_image_path?.trim())).map((order) => [order.id, order.main_image_path!.trim()]));
-        return nextImageUrls;
-      });
+      retainLoadedImages(snapshot.orders);
 
       setUsingOfflineSnapshot(true);
       setOfflineSnapshotAt(snapshot.savedAt);
       setError("");
       initialDataLoadedRef.current = true;
       return true;
-    };
-
-    const loadImages = async (loadedOrders: Order[], accessToken: string) => {
-      const nextImageUrls: Record<string, string> = {};
-      const previousImageUrls = imageUrlsRef.current;
-      const previousImagePaths = imagePathsRef.current;
-      const pending: Order[] = [];
-
-      loadedOrders.forEach((order) => {
-        const path = order.main_image_path?.trim() || "";
-        const existingUrl = previousImageUrls[order.id];
-        if (path && existingUrl && previousImagePaths[order.id] === path) {
-          nextImageUrls[order.id] = existingUrl;
-        } else if (path) {
-          pending.push(order);
-        }
-      });
-
-      for (let index = 0; index < pending.length; index += 6) {
-        const group = pending.slice(index, index + 6);
-        const resolved = await Promise.all(group.map(async (order) => ({
-          order,
-          url: await fetchOptimizedOrderThumbnail(order, accessToken),
-        })));
-        resolved.forEach(({ order, url }) => { if (url) nextImageUrls[order.id] = url; });
-      }
-
-      if (!active) {
-        Object.values(nextImageUrls).forEach((url) => { if (url.startsWith("blob:")) URL.revokeObjectURL(url); });
-        return;
-      }
-
-      setImageUrls((current) => {
-        Object.entries(current).forEach(([orderId, url]) => {
-          if (url.startsWith("blob:") && nextImageUrls[orderId] !== url) URL.revokeObjectURL(url);
-        });
-        imageUrlsRef.current = nextImageUrls;
-        imagePathsRef.current = Object.fromEntries(
-          loadedOrders
-            .filter((order) => Boolean(order.main_image_path?.trim()))
-            .map((order) => [order.id, order.main_image_path!.trim()]),
-        );
-        return nextImageUrls;
-      });
     };
 
     const load = async () => {
@@ -574,6 +548,7 @@ export default function Home() {
         const loadedCanOperate = loadedCurrentProfile?.role === "admin" || loadedCurrentProfile?.role === "manager" || loadedCurrentProfile?.role === "production";
         setSectors(loadedSectors);
         setOrders(loadedOrders);
+        retainLoadedImages(loadedOrders);
         setProfiles(loadedProfiles);
         setClients(loadedClients);
         setActiveView((current) => !loadedCurrentProfile || (loadedCurrentProfile.role !== "admin" && (current === "settings" || current === "users")) ? "kanban" : current);
@@ -598,9 +573,6 @@ export default function Home() {
             message: cause instanceof Error ? cause.message : "Falha ao salvar a cópia offline.",
           }));
 
-        const { data: sessionData } = await supabase.auth.getSession();
-        const accessToken = sessionData.session?.access_token;
-        if (accessToken) await loadImages(loadedOrders, accessToken);
       }
 
       initialDataLoadedRef.current = true;
@@ -634,6 +606,7 @@ export default function Home() {
     }
   }, [modal, isOnline]);
 
+
   const activeOrders = useMemo(() => orders.filter((order) => order.status !== "completed"), [orders]);
   const completedOrders = useMemo(() => orders.filter((order) => order.status === "completed"), [orders]);
   const activeOrderCounts = useMemo(() => ({
@@ -651,6 +624,41 @@ export default function Home() {
   const canOperate = Boolean(roleCanOperate && isOnline);
   const showOrderActions = canOperate && activeView === "orders";
   const canUploadFiles = Boolean(currentProfile?.active && isOnline);
+  const requestOrderThumbnail = useCallback(async (order: Order) => {
+    const path = order.main_image_path?.trim() || "";
+    if (!user || !path) return;
+    if (imageUrlsRef.current[order.id] && imagePathsRef.current[order.id] === path) return;
+
+    const requestKey = `${order.id}:${path}`;
+    if (thumbnailRequestsRef.current.has(requestKey)) return;
+    thumbnailRequestsRef.current.add(requestKey);
+
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+      const url = await fetchOptimizedOrderThumbnail(order, token, user.id);
+      if (!url) return;
+
+      setImageUrls((current) => {
+        const previous = current[order.id];
+        if (previous?.startsWith("blob:") && previous !== url) URL.revokeObjectURL(previous);
+        const next = { ...current, [order.id]: url };
+        imageUrlsRef.current = next;
+        imagePathsRef.current[order.id] = path;
+        return next;
+      });
+    } finally {
+      thumbnailRequestsRef.current.delete(requestKey);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (modal && modal !== "new" && modal.main_image_path && !imageUrlsRef.current[modal.id]) {
+      void requestOrderThumbnail(modal);
+    }
+  }, [modal, requestOrderThumbnail]);
+
   const handleRealtimeOrder = useCallback(async (payload: { eventType: "INSERT" | "UPDATE" | "DELETE"; new: Partial<Order>; old: Partial<Order> }) => {
     const orderId = String((payload.eventType === "DELETE" ? payload.old.id : payload.new.id) || "");
     if (!orderId) return;
@@ -678,18 +686,14 @@ export default function Home() {
     });
 
     const path = incoming.main_image_path?.trim() || "";
-    if (!path || imagePathsRef.current[incoming.id] === path) return;
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-    const url = await fetchOptimizedOrderThumbnail(incoming, token);
-    if (!url) return;
+    if (imagePathsRef.current[incoming.id] === path) return;
     setImageUrls((current) => {
       const previous = current[incoming.id];
-      if (previous?.startsWith("blob:") && previous !== url) URL.revokeObjectURL(previous);
-      const next = { ...current, [incoming.id]: url };
+      if (previous?.startsWith("blob:")) URL.revokeObjectURL(previous);
+      const next = { ...current };
+      delete next[incoming.id];
       imageUrlsRef.current = next;
-      imagePathsRef.current[incoming.id] = path;
+      delete imagePathsRef.current[incoming.id];
       return next;
     });
   }, []);
@@ -2247,6 +2251,7 @@ export default function Home() {
         onOpenOrder={openOrder}
         onDeleteOrder={(order) => void deleteOrder(order)}
         onPreview={(order, url) => { setImagePreviewZoom(1); setImagePreview({ src: url, alt: `Miniatura da OP ${order.op_number}` }); }}
+        onThumbnailVisible={requestOrderThumbnail}
         onMoveOrder={setMoveOrderTarget}
         onFinishOrder={(order) => void finishOrder(order)}
       />}

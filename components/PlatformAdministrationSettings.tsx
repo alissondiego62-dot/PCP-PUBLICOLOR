@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, MouseEvent } from "react";
 import { supabase } from "@/lib/supabase";
 import { ThumbnailZipImportPanel } from "@/components/ThumbnailZipImportPanel";
+import { ThumbnailOptimizationPanel } from "@/components/ThumbnailOptimizationPanel";
 
 type PlatformSettings = {
   vercel_project_id: string;
@@ -427,6 +428,7 @@ export function PlatformAdministrationSettings() {
 
     <div className="platform-thumbnail-tools">
       <ThumbnailZipImportPanel />
+      <ThumbnailOptimizationPanel />
       <ThumbnailSyncPanel />
     </div>
 

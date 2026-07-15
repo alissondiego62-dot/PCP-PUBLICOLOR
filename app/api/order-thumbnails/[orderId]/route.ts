@@ -8,6 +8,7 @@ import { driveThumbnailFileId } from "@/lib/order-thumbnail";
 import { logSystemEvent } from "@/lib/server/observability";
 
 const BUCKET = "order-thumbnails";
+const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 async function originalImage(path: string) {
   const admin = getSupabaseAdmin();
@@ -26,6 +27,15 @@ async function originalImage(path: string) {
   return Buffer.from(await data.arrayBuffer());
 }
 
+async function signedUrl(path: string) {
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin.storage
+    .from(BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
+}
+
 async function removeObsoleteOptimizedFiles(orderId: string, keepFileName: string) {
   const admin = getSupabaseAdmin();
   const folder = `optimized/${orderId}`;
@@ -36,10 +46,22 @@ async function removeObsoleteOptimizedFiles(orderId: string, keepFileName: strin
   if (obsolete.length) await admin.storage.from(BUCKET).remove(obsolete);
 }
 
+function redirectToImage(url: string) {
+  return new Response(null, {
+    status: 307,
+    headers: {
+      location: url,
+      "cache-control": "private, max-age=3600, stale-while-revalidate=86400",
+      vary: "authorization",
+    },
+  });
+}
+
 export async function GET(request: Request, context: { params: Promise<{ orderId: string }> }) {
   const startedAt = Date.now();
   let actor: AuthorizedAppUser | null = null;
   let requestedOrderId: string | null = null;
+
   try {
     actor = await requireAppUser(request);
     const { orderId } = await context.params;
@@ -55,51 +77,48 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
       return Response.json({ error: "Pedido sem miniatura vinculada." }, { status: 404 });
     }
 
-    const signature = crypto.createHash("sha256").update(order.main_image_path).digest("hex").slice(0, 20);
+    const signature = crypto
+      .createHash("sha256")
+      .update(order.main_image_path)
+      .digest("hex")
+      .slice(0, 20);
     const fileName = `${signature}.webp`;
     const cachePath = `optimized/${order.id}/${fileName}`;
-    const cached = await admin.storage.from(BUCKET).download(cachePath);
-    let image: Buffer;
 
-    if (!cached.error && cached.data) {
-      image = Buffer.from(await cached.data.arrayBuffer());
-    } else {
-      const original = await originalImage(order.main_image_path);
-      image = await sharp(original)
-        .rotate()
-        .resize({ width: 520, height: 420, fit: "inside", withoutEnlargement: true })
-        .webp({ quality: 78, effort: 4 })
-        .toBuffer();
-      const upload = await admin.storage.from(BUCKET).upload(cachePath, image, {
-        contentType: "image/webp",
-        cacheControl: "31536000",
-        upsert: true,
-      });
-      if (upload.error) throw new Error(`Falha ao armazenar WebP: ${upload.error.message}`);
-      await removeObsoleteOptimizedFiles(order.id, fileName);
-      await logSystemEvent({
-        kind: "integration",
-        level: "info",
-        source: "thumbnail_optimizer",
-        action: "generate_webp",
-        status: "success",
-        message: `Miniatura WebP gerada para a OP ${order.op_number}.`,
-        orderId: order.id,
-        durationMs: Date.now() - startedAt,
-        metadata: { cachePath, bytes: image.byteLength },
-        actor,
-      });
-    }
+    const existingSignedUrl = await signedUrl(cachePath);
+    if (existingSignedUrl) return redirectToImage(existingSignedUrl);
 
-    return new Response(image, {
-      status: 200,
-      headers: {
-        "content-type": "image/webp",
-        "content-length": String(image.byteLength),
-        "cache-control": "private, max-age=86400, stale-while-revalidate=604800",
-        "content-disposition": `inline; filename="OP-${order.op_number}.webp"`,
-      },
+    const original = await originalImage(order.main_image_path);
+    const image = await sharp(original)
+      .rotate()
+      .resize({ width: 520, height: 420, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 74, effort: 3 })
+      .toBuffer();
+
+    const upload = await admin.storage.from(BUCKET).upload(cachePath, image, {
+      contentType: "image/webp",
+      cacheControl: "31536000",
+      upsert: true,
     });
+    if (upload.error) throw new Error(`Falha ao armazenar WebP: ${upload.error.message}`);
+
+    await removeObsoleteOptimizedFiles(order.id, fileName);
+    await logSystemEvent({
+      kind: "integration",
+      level: "info",
+      source: "thumbnail_optimizer",
+      action: "generate_webp",
+      status: "success",
+      message: `Miniatura WebP gerada para a OP ${order.op_number}.`,
+      orderId: order.id,
+      durationMs: Date.now() - startedAt,
+      metadata: { cachePath, bytes: image.byteLength },
+      actor,
+    });
+
+    const generatedSignedUrl = await signedUrl(cachePath);
+    if (!generatedSignedUrl) throw new Error("A miniatura foi criada, mas não foi possível gerar o link temporário.");
+    return redirectToImage(generatedSignedUrl);
   } catch (error) {
     await logSystemEvent({
       kind: "api_error",

@@ -1,6 +1,6 @@
-const SHELL_CACHE = "publicolor-pcp-shell-v3.1.0";
-const RUNTIME_CACHE = "publicolor-pcp-runtime-v3.1.0";
-const THUMBNAIL_CACHE = "publicolor-order-thumbnails-v1";
+const SHELL_CACHE = "publicolor-pcp-shell-v3.1.1";
+const RUNTIME_CACHE = "publicolor-pcp-runtime-v3.1.1";
+const THUMBNAIL_CACHE_PREFIX = "publicolor-order-thumbnails-v2";
 const STATIC_ASSETS = [
   "/",
   "/manifest.webmanifest",
@@ -20,7 +20,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
-      keys.filter((key) => ![SHELL_CACHE, RUNTIME_CACHE, THUMBNAIL_CACHE].includes(key)).map((key) => caches.delete(key))
+      keys.filter((key) => ![SHELL_CACHE, RUNTIME_CACHE].includes(key) && !key.startsWith(THUMBNAIL_CACHE_PREFIX)).map((key) => caches.delete(key))
     ))
   );
   self.clients.claim();
