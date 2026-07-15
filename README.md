@@ -1,4 +1,4 @@
-# Publicolor PCP 3.1.4
+# Publicolor PCP 3.1.5
 
 Sistema web de planejamento e controle de produção da Publicolor, com Dashboard, Kanban, Pedidos, agenda de instalação/entrega, clientes, atividades, arquivos, histórico e integrações com Supabase e Google Drive.
 
@@ -36,21 +36,15 @@ pnpm test:e2e
 
 ## Atualização do banco
 
-A versão **3.1.4 exige SQL** e parte da estrutura criada na versão 3.1.3.
+A versão **3.1.5 não exige novo SQL**. Ela utiliza a estrutura de atividades, materiais e preços instalada pela versão 3.1.4.
 
-Execute primeiro em homologação:
+Para uma instalação que ainda esteja na versão 3.1.2 ou anterior, execute primeiro o arquivo cumulativo:
 
 ```text
 SQL-ATUALIZACAO-PUBLICOLOR-3.1.4.sql
 ```
 
-O SQL da raiz é cumulativo e pode ser executado diretamente sobre a versão 3.1.2. A etapa incremental da versão está em:
-
-```text
-supabase/migrations/20260801010000_purchase_activity_hierarchy_and_pricing.sql
-```
-
-A atualização consolida as compras por OP, converte os materiais em subatividades, adiciona preço unitário e registra alterações no histórico da OS. Após a execução, use `SQL-VALIDAR-PUBLICOLOR-3.1.4.sql` para conferir a estrutura sem alterar dados.
+Em bancos que já utilizam a versão 3.1.4, publique somente o código da versão 3.1.5.
 
 ## Entregas da versão 3.1.0
 
@@ -75,7 +69,8 @@ A atualização consolida as compras por OP, converte os materiais em subativida
 
 Leia antes de publicar:
 
-- `COMO-ATUALIZAR-PUBLICOLOR-3.1.4.txt`
+- `COMO-ATUALIZAR-PUBLICOLOR-3.1.5.txt`
+- `COMO-ATUALIZAR-PUBLICOLOR-3.1.4.txt` — referência da versão anterior
 - `COMO-ATUALIZAR-PUBLICOLOR-3.1.3.txt` — referência da versão anterior
 - `COMO-ATUALIZAR-PUBLICOLOR-3.1.2.txt` — referência da versão anterior
 - `COMO-ATUALIZAR-PUBLICOLOR-3.1.1.txt` — referência da versão anterior
@@ -109,3 +104,10 @@ Consulte `docs/ATUALIZACAO-3.1.3.md` e `COMO-ATUALIZAR-PUBLICOLOR-3.1.3.txt`.
 As compras agora são consolidadas em uma atividade principal por OP, com materiais organizados como subatividades recolhíveis. A atividade principal possui propagação opcional de status, botão para copiar a lista de produtos e total calculado a partir da quantidade e do preço unitário de cada item.
 
 Consulte `docs/ATUALIZACAO-3.1.4.md` e `COMO-ATUALIZAR-PUBLICOLOR-3.1.4.txt`.
+
+
+## Publicolor PCP 3.1.5
+
+A aba Atividades recebeu linhas compactas para atividades principais e subatividades, ações por ícones, cópia individual ou em lote somente de produtos e quantidades, preços com salvamento automático e cadastro contínuo pelo Enter.
+
+Consulte `docs/ATUALIZACAO-3.1.5.md` e `COMO-ATUALIZAR-PUBLICOLOR-3.1.5.txt`.
