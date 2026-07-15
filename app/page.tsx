@@ -1,7 +1,7 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CompletedOrdersView } from "@/components/CompletedOrdersView";
 import { InstallationAgendaView } from "@/app/components/InstallationAgendaView";
 import { ClientFormModal } from "@/components/ClientFormModal";
@@ -252,6 +252,7 @@ export default function Home() {
   const imageUrlsRef = useRef<Record<string, string>>({});
   const imagePathsRef = useRef<Record<string, string>>({});
   const [boardScrollWidth, setBoardScrollWidth] = useState(0);
+  const [activeKanbanSectorIndex, setActiveKanbanSectorIndex] = useState(0);
 
   const consultantOptions = useMemo(() => {
     const names = new Set<string>(DEFAULT_CONSULTANTS);
@@ -624,6 +625,33 @@ export default function Home() {
   const activeFilterCount = [sectorFilter, statusFilter, priorityFilter, responsibleFilter, deadlineFilter].filter((value) => value !== "all").length;
   const hasActiveSearch = Boolean(search.trim() || activeFilterCount > 0);
   const visibleSectors = hasActiveSearch ? activeSectors.filter((sector) => filtered.some((order) => order.sector_id === sector.id)) : activeSectors;
+
+  const updateActiveKanbanSector = useCallback((board: HTMLElement | null) => {
+    if (!board) return;
+    const sectors = Array.from(board.querySelectorAll<HTMLElement>(".sector"));
+    if (!sectors.length) {
+      setActiveKanbanSectorIndex(0);
+      return;
+    }
+
+    const boardRect = board.getBoundingClientRect();
+    const viewportCenter = board.scrollLeft + board.clientWidth / 2;
+    let closestIndex = 0;
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    sectors.forEach((sector, index) => {
+      const sectorRect = sector.getBoundingClientRect();
+      const sectorCenter = board.scrollLeft + (sectorRect.left - boardRect.left) + sectorRect.width / 2;
+      const distance = Math.abs(sectorCenter - viewportCenter);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestIndex = index;
+      }
+    });
+
+    setActiveKanbanSectorIndex((current) => current === closestIndex ? current : closestIndex);
+  }, []);
+
   useEffect(() => {
     if (activeView !== "kanban") return;
 
@@ -634,6 +662,7 @@ export default function Home() {
     const updateScrollWidth = () => {
       setBoardScrollWidth(board.scrollWidth);
       topScroll.scrollLeft = board.scrollLeft;
+      updateActiveKanbanSector(board);
     };
 
     const animationFrame = window.requestAnimationFrame(updateScrollWidth);
@@ -647,7 +676,13 @@ export default function Home() {
       resizeObserver.disconnect();
       window.removeEventListener("resize", updateScrollWidth);
     };
-  }, [activeView, visibleSectors.length, filtered.length]);
+  }, [activeView, visibleSectors.length, filtered.length, updateActiveKanbanSector]);
+
+  useEffect(() => {
+    // Ajuste derivado da quantidade de colunas após busca ou filtro.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveKanbanSectorIndex((current) => Math.min(current, Math.max(0, visibleSectors.length - 1)));
+  }, [visibleSectors.length]);
 
   function syncKanbanScroll(source: HTMLElement | null, target: HTMLElement | null) {
     if (!source || !target || syncingBoardScroll.current) return;
@@ -656,6 +691,27 @@ export default function Home() {
     window.requestAnimationFrame(() => {
       syncingBoardScroll.current = false;
     });
+  }
+
+  function handleKanbanScroll() {
+    const board = boardRef.current;
+    syncKanbanScroll(board, topScrollRef.current);
+    updateActiveKanbanSector(board);
+  }
+
+  function scrollToKanbanSector(index: number) {
+    const board = boardRef.current;
+    if (!board) return;
+    const sectors = Array.from(board.querySelectorAll<HTMLElement>(".sector"));
+    if (!sectors.length) return;
+
+    const nextIndex = Math.max(0, Math.min(index, sectors.length - 1));
+    const target = sectors[nextIndex];
+    const boardRect = board.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const targetLeft = board.scrollLeft + (targetRect.left - boardRect.left);
+    board.scrollTo({ left: targetLeft, behavior: "smooth" });
+    setActiveKanbanSectorIndex(nextIndex);
   }
 
   const sortLabel: Record<SortMode, string> = { newest: "Mais recentes", oldest: "Mais antigos", delivery: "Instalação/entrega" };
@@ -2011,6 +2067,18 @@ export default function Home() {
           <button className="apply-filters" type="button" onClick={() => setFiltersOpen(false)}>Aplicar filtros</button>
         </section>
       </>}
+      {visibleSectors.length > 0 && <nav className="kanban-mobile-nav" aria-label="Navegação entre setores do Kanban">
+        <button type="button" className="kanban-sector-arrow" aria-label="Setor anterior" onClick={() => scrollToKanbanSector(activeKanbanSectorIndex - 1)} disabled={activeKanbanSectorIndex <= 0}>‹</button>
+        <div className="kanban-sector-current" aria-live="polite">
+          <small>SETOR {Math.min(activeKanbanSectorIndex + 1, visibleSectors.length)} DE {visibleSectors.length}</small>
+          <strong>{visibleSectors[activeKanbanSectorIndex]?.name || visibleSectors[0]?.name}</strong>
+          <span>Deslize para os lados ou use as setas.</span>
+        </div>
+        <button type="button" className="kanban-sector-arrow" aria-label="Próximo setor" onClick={() => scrollToKanbanSector(activeKanbanSectorIndex + 1)} disabled={activeKanbanSectorIndex >= visibleSectors.length - 1}>›</button>
+        <div className="kanban-sector-dots" role="tablist" aria-label="Setores disponíveis">
+          {visibleSectors.map((sector, index) => <button type="button" key={sector.id} role="tab" aria-selected={index === activeKanbanSectorIndex} aria-label={`Ir para ${sector.name}`} className={index === activeKanbanSectorIndex ? "active" : ""} onClick={() => scrollToKanbanSector(index)} />)}
+        </div>
+      </nav>}
       <div
         className="board-top-scroll"
         ref={topScrollRef}
@@ -2022,9 +2090,9 @@ export default function Home() {
       <section
         className="board"
         ref={boardRef}
-        onScroll={() => syncKanbanScroll(boardRef.current, topScrollRef.current)}
+        onScroll={handleKanbanScroll}
       >
-        {visibleSectors.map((sector) => <article className="sector" key={sector.id}>
+        {visibleSectors.map((sector, sectorIndex) => <article className="sector" key={sector.id} data-sector-index={sectorIndex} data-sector-id={sector.id}>
           <div className="sector-head"><div><i>{String(sector.position).padStart(2, "0")}</i><h2>{sector.name}</h2></div><span>{filtered.filter((o) => o.sector_id === sector.id).length}</span></div>
           <div className="sector-body">
           {statusesForSector(sector.name).map((status) => <div className={`lane ${dragOverLane === `${sector.id}:${status}` ? "drag-over" : ""}`} key={status} aria-label={`${sector.name} — ${status}`} onDragOver={(event) => { if (!canOperate) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverLane(`${sector.id}:${status}`); }} onDrop={() => void move(sector.id, status)}>

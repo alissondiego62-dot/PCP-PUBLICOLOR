@@ -1,0 +1,117 @@
+/* Instalação do PCP como aplicativo em celular e tablet. */
+.pwa-install-prompt {
+  position: fixed;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 120;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: min(470px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid #d9cce0;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 20px 55px rgba(37, 15, 45, .24);
+  backdrop-filter: blur(14px);
+}
+
+.pwa-install-prompt > img {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+}
+
+.pwa-install-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.pwa-install-copy strong {
+  color: #32163d;
+  font-size: 13px;
+}
+
+.pwa-install-copy span {
+  color: #756d78;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.pwa-install-button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #5b1d73;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pwa-install-close {
+  position: absolute;
+  top: -9px;
+  right: -7px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid #d8cedc;
+  border-radius: 50%;
+  background: #fff;
+  color: #6b5d70;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.pwa-ios-instructions {
+  grid-column: 1 / -1;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: #f4eff6;
+  color: #594c5e;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+@media (min-width: 1101px) {
+  .pwa-install-prompt {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .pwa-install-prompt {
+    left: 10px;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: auto;
+    grid-template-columns: 42px minmax(0, 1fr);
+    padding: 11px 12px;
+  }
+
+  .pwa-install-prompt > img {
+    width: 42px;
+    height: 42px;
+  }
+
+  .pwa-install-button {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 43px;
+  }
+}
+
+@media (display-mode: standalone) and (max-width: 700px) {
+  .content {
+    padding-top: max(16px, env(safe-area-inset-top)) !important;
+  }
+
+  .sidebar {
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+}

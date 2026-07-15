@@ -4,7 +4,7 @@ Sistema web de PCP para controle de pedidos, produção, agenda de instalação/
 
 ## Requisitos
 
-- Node.js 22.13 ou superior
+- Node.js 24.x
 - pnpm 11.12
 - Projeto Supabase configurado
 - Projeto Vercel configurado
@@ -64,3 +64,8 @@ O PNG gerado de cada página importada do PDF da OS passa a ser automaticamente 
 ## Publicolor 3.0.6
 
 Importação em lote de miniaturas PNG por ZIP, com identificação pelo número da OP, envio para 04 - DOCUMENTOS e substituição segura da miniatura anterior.
+
+
+## Publicolor 3.0.7
+
+Kanban responsivo em celular e tablet com navegação lateral por setor, encaixe automático, setas de navegação e instalação do PCP na tela inicial como aplicativo. Consulte `docs/ATUALIZACAO-3.0.7.md` e `docs/RECOMENDACOES-FUTURAS.md`.
