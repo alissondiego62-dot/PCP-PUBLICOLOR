@@ -1,76 +1,60 @@
-# Recomendações para as próximas atualizações do Publicolor PCP
+# Próximas recomendações após o Publicolor PCP 3.1.0
 
-## Prioridade alta
+## Itens concluídos nesta versão
 
-### 1. Movimento de pedidos adaptado ao toque
+- movimento de pedidos adaptado ao toque;
+- divisão das principais telas em `features/`;
+- CSS responsivo consolidado;
+- testes Playwright nas seis resoluções definidas;
+- Supabase Realtime incremental;
+- miniaturas WebP com original preservado no Google Drive;
+- painel de diagnóstico das integrações;
+- PWA com leitura offline controlada;
+- versão e commit visíveis;
+- observabilidade central;
+- modelos para produção e homologação separadas.
 
-O arrastar e soltar nativo funciona melhor no computador do que no celular. Recomenda-se adicionar em cada cartão uma ação `Mover`, abrindo seletores de setor e status. O drag-and-drop pode continuar disponível no desktop.
+## Prioridade alta seguinte
 
-### 2. Dividir `app/page.tsx`
+### 1. Virtualização dos cartões
 
-A página principal concentra autenticação, consultas, Dashboard, Kanban, Pedidos, Clientes, Relatórios, Usuários, Configurações e modais. Recomenda-se separar por recursos:
+Quando o volume por setor crescer, renderizar apenas os cartões visíveis. Isso reduz memória e tempo de montagem do Kanban.
+
+### 2. Separar os modais e comandos restantes de `app/page.tsx`
+
+A divisão principal foi feita, mas autenticação, detalhes da OS e comandos de escrita ainda estão no orquestrador. A próxima etapa deve criar:
 
 ```text
-features/dashboard/
-features/kanban/
-features/orders/
-features/clients/
-features/settings/
-hooks/
-services/
+features/auth/
+features/order-details/
+features/installations/
+hooks/usePcpData.ts
+services/orders.ts
+services/clients.ts
 ```
 
-Isso reduz o risco de regressão e facilita testes e manutenção.
+### 3. Fila de processamento para lotes grandes
 
-### 3. Consolidar os arquivos CSS
+Uploads extensos de ZIP e geração em massa de miniaturas devem usar uma fila no servidor, com retomada, progresso persistente e reprocessamento de falhas.
 
-Existem várias camadas responsivas que sobrescrevem as mesmas classes. Recomenda-se migrar gradualmente para um arquivo por módulo e uma única camada de breakpoints. A ordem atual funciona, mas aumenta a possibilidade de regras conflitantes.
+### 4. Alertas de observabilidade
 
-### 4. Testes automáticos de responsividade
-
-Adicionar Playwright com capturas e testes funcionais nas larguras:
-
-- 360 × 800;
-- 390 × 844;
-- 768 × 1024;
-- 1024 × 768;
-- 1366 × 768;
-- 1920 × 1080.
-
-Os testes devem validar navegação entre setores, abertura de OS, filtros, miniaturas, agenda e configurações.
+Definir limites para notificação: falhas repetidas no Drive, erros de miniatura, Realtime desconectado por longo período e aumento de erros em 24 horas.
 
 ## Prioridade média
 
-### 5. Desempenho do Kanban
+### 5. Política de retenção
 
-Quando o volume aumentar, carregar todos os cartões simultaneamente poderá ficar lento. Recomenda-se paginação por setor, carregamento incremental e virtualização dos cartões.
+Remover automaticamente eventos de observabilidade antigos e WebPs órfãos, mantendo um período acordado com a administração.
 
-### 6. Atualizações em tempo real
+### 6. Tipos do banco gerados automaticamente
 
-Usar Supabase Realtime para receber mudanças de pedidos sem recarregar toda a base. As consultas devem atualizar somente o pedido alterado.
+Gerar os tipos TypeScript do Supabase no CI e impedir merge quando os tipos estiverem desatualizados em relação às migrations.
 
-### 7. Miniaturas otimizadas
+### 7. Testes visuais com baseline
 
-Manter o PNG original no Google Drive e gerar uma versão WebP reduzida para o Kanban. Isso reduz consumo de internet em celulares e acelera a abertura dos setores.
+Além dos testes funcionais, armazenar capturas aprovadas e detectar alterações inesperadas em Dashboard, Kanban, agenda, OS e Configurações.
 
-### 8. Histórico e diagnóstico de integrações
+### 8. Homologação com dados fictícios representativos
 
-Criar um painel com últimas sincronizações do Google Drive, falhas de upload, arquivos sem OP e tempo médio de processamento dos lotes.
-
-## Evolução futura
-
-### 9. PWA com leitura offline controlada
-
-Uma versão posterior pode armazenar uma cópia somente leitura dos pedidos vistos recentemente. Alterações offline exigem fila de sincronização, resolução de conflitos e auditoria; não devem ser implementadas sem essas proteções.
-
-### 10. Versionamento visível
-
-Exibir a versão do sistema e o commit no rodapé das Configurações. Isso facilita identificar se a Vercel publicou o código mais recente.
-
-### 11. Observabilidade
-
-Adicionar registro central de erros do frontend e das APIs, com contexto da OP, rota, usuário e integração afetada, sem registrar tokens ou credenciais.
-
-### 12. Ambientes separados
-
-Manter produção e homologação com projetos Supabase e Vercel distintos. Toda migration deve ser validada na homologação antes de chegar ao banco principal.
+Manter um conjunto de pedidos, subpedidos, arquivos e instalações sem dados reais de clientes para os testes automatizados.

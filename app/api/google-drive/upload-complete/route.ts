@@ -9,7 +9,9 @@ import {
   getSupabaseAdmin,
   requireAppUser,
   responseMessage,
+  type AuthorizedAppUser,
 } from "@/lib/server/supabase-server";
+import { logSystemEvent } from "@/lib/server/observability";
 import {
   buildDriveThumbnailPath,
   isOfficialOrderThumbnail,
@@ -23,8 +25,10 @@ function driveUrl(file: DriveFile) {
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
+  let actor: AuthorizedAppUser | null = null;
   try {
-    const actor = await requireAppUser(request);
+    actor = await requireAppUser(request);
     const body = await request.json() as { session_id?: string; drive_file_id?: string };
     const sessionId = String(body.session_id || "").trim();
     const fileId = String(body.drive_file_id || "").trim();
@@ -168,6 +172,18 @@ export async function POST(request: Request) {
     }
 
     await admin.from("google_drive_upload_sessions").delete().eq("id", sessionId);
+    await logSystemEvent({
+      kind: "integration",
+      level: thumbnailWarning ? "warning" : "info",
+      source: "google_drive",
+      action: "upload_complete",
+      status: thumbnailWarning ? "warning" : "success",
+      message: thumbnailWarning || `Arquivo ${record.file_name} vinculado ao pedido.`,
+      orderId: pending.order_id,
+      durationMs: Date.now() - startedAt,
+      metadata: { recovered: !fileId, thumbnailUpdated, fileCategory: record.file_category },
+      actor,
+    });
     return Response.json({
       ok: true,
       file: record,
@@ -176,6 +192,16 @@ export async function POST(request: Request) {
       thumbnail_warning: thumbnailWarning,
     });
   } catch (error) {
+    await logSystemEvent({
+      kind: "api_error",
+      level: "error",
+      source: "google_drive",
+      action: "upload_complete",
+      status: "error",
+      message: error instanceof Error ? error.message : "Falha desconhecida ao concluir upload.",
+      durationMs: Date.now() - startedAt,
+      actor,
+    });
     return responseMessage(error);
   }
 }

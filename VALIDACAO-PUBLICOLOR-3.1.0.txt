@@ -1,0 +1,18 @@
+PUBLICOLOR PCP 3.1.0 — VALIDAÇÃO DO PACOTE
+
+Validado neste ambiente:
+- sintaxe de 75 arquivos TypeScript/TSX: 0 erros;
+- imports internos: 0 ausentes;
+- arquivos JSON: válidos;
+- 19 arquivos CSS: comentários e chaves balanceados;
+- JavaScript/MJS e Playwright Python: sintaxe válida;
+- package.json compatível com o importador do pnpm-lock.yaml;
+- SQL da raiz idêntico à migration 20260730010000;
+- nenhum .env.local, arquivo PEM, pyc ou tsbuildinfo incluído.
+
+Validação obrigatória no computador/GitHub Actions antes da produção:
+  corepack enable
+  pnpm install --frozen-lockfile
+  pnpm validate
+
+O build completo não foi executado neste ambiente porque não havia acesso ao registro npm.

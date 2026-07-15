@@ -6,9 +6,6 @@ import { CompletedOrdersView } from "@/components/CompletedOrdersView";
 import { InstallationAgendaView } from "@/app/components/InstallationAgendaView";
 import { ClientFormModal } from "@/components/ClientFormModal";
 import { ClientsView } from "@/components/ClientsView";
-import { DataImportExportSettings } from "@/components/DataImportExportSettings";
-import { GoogleDriveSettings } from "@/components/GoogleDriveSettings";
-import { PlatformAdministrationSettings } from "@/components/PlatformAdministrationSettings";
 import { OrderDriveUpload } from "@/components/OrderDriveUpload";
 import { OrderBatchForm, type OrderBatchSubmission } from "@/components/OrderBatchForm";
 import { PdfOrderImporter } from "@/components/PdfOrderImporter";
@@ -53,7 +50,20 @@ import { supabase } from "@/lib/supabase";
 import { driveAuthenticatedJson, uploadFileToOrderDrive, type DriveConnectionStatus } from "@/lib/google-drive-client";
 import { requiresAutomaticOrderNumber } from "@/lib/order-number";
 import { buildDriveThumbnailPath, driveThumbnailFileId } from "@/lib/order-thumbnail";
-import { forEachWithConcurrency } from "@/lib/async";
+import { DashboardView } from "@/features/dashboard/DashboardView";
+import { ReportsView } from "@/features/reports/ReportsView";
+import { UsersView } from "@/features/users/UsersView";
+import { SettingsView } from "@/features/settings/SettingsView";
+import { MoveOrderModal } from "@/features/kanban/MoveOrderModal";
+import { KanbanView } from "@/features/kanban/KanbanView";
+import { OrdersView } from "@/features/orders/OrdersView";
+import { OfflineModeBanner } from "@/components/OfflineModeBanner";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { usePcpRealtime } from "@/hooks/usePcpRealtime";
+import { useObservability } from "@/hooks/useObservability";
+import { loadOfflineSnapshot, saveOfflineSnapshot } from "@/lib/offline-snapshot";
+import { fetchCachedOrderThumbnails, fetchOptimizedOrderThumbnail } from "@/services/order-thumbnails";
+import { reportClientEvent } from "@/services/observability-client";
 
 const DEFAULT_CONSULTANTS = [
   "BRHENO SALLUM",
@@ -77,6 +87,34 @@ function isPdfPageThumbnailPath(path: string | null | undefined) {
 
 function normalizedResponsibleName(value: string | null | undefined) {
   return value?.trim().toLocaleUpperCase("pt-BR") || "";
+}
+
+function ordersForOfflineSnapshot(orders: Order[]): Order[] {
+  const active = orders.filter((order) => order.status !== "completed");
+  const recentCompleted = orders
+    .filter((order) => order.status === "completed")
+    .sort((first, second) => new Date(second.completed_at || second.created_at).getTime() - new Date(first.completed_at || first.created_at).getTime())
+    .slice(0, 150);
+  return [...active, ...recentCompleted];
+}
+
+function clientsForOfflineSnapshot(clients: Client[], orders: Order[]): Client[] {
+  const referencedClientIds = new Set(orders.map((order) => order.client_id).filter(Boolean));
+  return clients
+    .filter((client) => referencedClientIds.has(client.id))
+    .map((client) => ({
+      ...client,
+      document: null,
+      phone: null,
+      whatsapp: null,
+      email: null,
+      contact_name: null,
+      address: null,
+      district: null,
+      city: null,
+      state: null,
+      notes: null,
+    }));
 }
 
 type CommentCountQueryResult = {
@@ -108,6 +146,14 @@ async function fetchOrderCommentCounts(): Promise<CommentCountQueryResult> {
     return result;
   }, {});
   return { counts, error: fallbackResult.error };
+}
+
+async function fetchOrderCommentCount(orderId: string) {
+  const { count, error } = await supabase
+    .from("order_comments")
+    .select("id", { count: "exact", head: true })
+    .eq("order_id", orderId);
+  return { count: count || 0, error };
 }
 
 function orderResponsibleName(order: Order) {
@@ -214,6 +260,9 @@ export default function Home() {
   const [reopenOrderTarget, setReopenOrderTarget] = useState<Order | null>(null);
   const [reopeningOrder, setReopeningOrder] = useState(false);
   const [reopenError, setReopenError] = useState("");
+  const [moveOrderTarget, setMoveOrderTarget] = useState<Order | null>(null);
+  const [usingOfflineSnapshot, setUsingOfflineSnapshot] = useState(false);
+  const [offlineSnapshotAt, setOfflineSnapshotAt] = useState<string | null>(null);
   const [dragOverLane, setDragOverLane] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [changeHistory, setChangeHistory] = useState<OrderChangeEntry[]>([]);
@@ -252,6 +301,8 @@ export default function Home() {
   const imageUrlsRef = useRef<Record<string, string>>({});
   const imagePathsRef = useRef<Record<string, string>>({});
   const [boardScrollWidth, setBoardScrollWidth] = useState(0);
+  const isOnline = useOnlineStatus();
+  useObservability();
   const [activeKanbanSectorIndex, setActiveKanbanSectorIndex] = useState(0);
 
   const consultantOptions = useMemo(() => {
@@ -319,7 +370,7 @@ export default function Home() {
 
 
   useEffect(() => {
-    const hasDialog = Boolean(modal || reopenOrderTarget || userModalOpen || clientModalOpen);
+    const hasDialog = Boolean(modal || reopenOrderTarget || moveOrderTarget || userModalOpen || clientModalOpen);
     if (!hasDialog) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -327,6 +378,7 @@ export default function Home() {
       if (event.key !== "Escape" || creatingOrder || reopeningOrder || creatingUser || clientBusy) return;
       if (clientModalOpen) setClientModalOpen(false);
       else if (userModalOpen) setUserModalOpen(false);
+      else if (moveOrderTarget) setMoveOrderTarget(null);
       else if (reopenOrderTarget) setReopenOrderTarget(null);
       else if (modal) {
         setNewOrderInitialClientId("");
@@ -338,7 +390,7 @@ export default function Home() {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [modal, reopenOrderTarget, userModalOpen, clientModalOpen, creatingOrder, reopeningOrder, creatingUser, clientBusy]);
+  }, [modal, reopenOrderTarget, moveOrderTarget, userModalOpen, clientModalOpen, creatingOrder, reopeningOrder, creatingUser, clientBusy]);
 
   useEffect(() => () => {
     if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
@@ -407,8 +459,86 @@ export default function Home() {
   useEffect(() => {
     if (!user) return;
     let active = true;
+
+    const applySnapshot = async () => {
+      const snapshot = await loadOfflineSnapshot(user.id).catch(() => null);
+      if (!active || !snapshot) return false;
+      setOrders(snapshot.orders);
+      setSectors(snapshot.sectors);
+      setClients(snapshot.clients);
+      setProfiles(snapshot.profiles);
+
+      const nextImageUrls = await fetchCachedOrderThumbnails(snapshot.orders);
+      setImageUrls((current) => {
+        Object.entries(current).forEach(([orderId, url]) => {
+          if (url.startsWith("blob:") && nextImageUrls[orderId] !== url) URL.revokeObjectURL(url);
+        });
+        imageUrlsRef.current = nextImageUrls;
+        imagePathsRef.current = Object.fromEntries(snapshot.orders.filter((order) => Boolean(order.main_image_path?.trim())).map((order) => [order.id, order.main_image_path!.trim()]));
+        return nextImageUrls;
+      });
+
+      setUsingOfflineSnapshot(true);
+      setOfflineSnapshotAt(snapshot.savedAt);
+      setError("");
+      initialDataLoadedRef.current = true;
+      return true;
+    };
+
+    const loadImages = async (loadedOrders: Order[], accessToken: string) => {
+      const nextImageUrls: Record<string, string> = {};
+      const previousImageUrls = imageUrlsRef.current;
+      const previousImagePaths = imagePathsRef.current;
+      const pending: Order[] = [];
+
+      loadedOrders.forEach((order) => {
+        const path = order.main_image_path?.trim() || "";
+        const existingUrl = previousImageUrls[order.id];
+        if (path && existingUrl && previousImagePaths[order.id] === path) {
+          nextImageUrls[order.id] = existingUrl;
+        } else if (path) {
+          pending.push(order);
+        }
+      });
+
+      for (let index = 0; index < pending.length; index += 6) {
+        const group = pending.slice(index, index + 6);
+        const resolved = await Promise.all(group.map(async (order) => ({
+          order,
+          url: await fetchOptimizedOrderThumbnail(order, accessToken),
+        })));
+        resolved.forEach(({ order, url }) => { if (url) nextImageUrls[order.id] = url; });
+      }
+
+      if (!active) {
+        Object.values(nextImageUrls).forEach((url) => { if (url.startsWith("blob:")) URL.revokeObjectURL(url); });
+        return;
+      }
+
+      setImageUrls((current) => {
+        Object.entries(current).forEach(([orderId, url]) => {
+          if (url.startsWith("blob:") && nextImageUrls[orderId] !== url) URL.revokeObjectURL(url);
+        });
+        imageUrlsRef.current = nextImageUrls;
+        imagePathsRef.current = Object.fromEntries(
+          loadedOrders
+            .filter((order) => Boolean(order.main_image_path?.trim()))
+            .map((order) => [order.id, order.main_image_path!.trim()]),
+        );
+        return nextImageUrls;
+      });
+    };
+
     const load = async () => {
       if (!initialDataLoadedRef.current) setLoading(true);
+
+      if (!isOnline) {
+        const restored = await applySnapshot();
+        if (!restored && active) setError("Sem conexão e sem cópia offline disponível neste dispositivo.");
+        if (active) setLoading(false);
+        return;
+      }
+
       const [sectorResult, orderResult, commentCountResult, profileResult, clientResult] = await Promise.all([
         supabase.from("sectors").select("id,name,position,active").order("position"),
         supabase.from("orders").select("id,op_number,client_id,client_name,description,delivery_date,priority,sector_id,status,responsible_user_id,consultant_name,main_image_path,blocked,completed_at,installation_scheduled_at,installation_address,installation_team,installation_vehicle,installation_status,installation_notes,installation_completed_at,installation_time_confirmed,materials,notes,created_at").order("position"),
@@ -417,154 +547,92 @@ export default function Home() {
         supabase.from("clients").select("*").order("name"),
       ]);
       if (!active) return;
+
       const dbError = sectorResult.error || orderResult.error || commentCountResult.error || profileResult.error || clientResult.error;
       if (dbError) {
-        const missingSchema = ["42P01", "PGRST205"].includes(dbError.code || "");
-        setError(missingSchema ? "A conexão está correta, mas as tabelas ainda precisam ser instaladas no Supabase." : `Não foi possível carregar os pedidos: ${dbError.message}`);
+        const restored = await applySnapshot();
+        if (!restored) {
+          const missingSchema = ["42P01", "PGRST205"].includes(dbError.code || "");
+          setError(missingSchema ? "A conexão está correta, mas as tabelas ainda precisam ser instaladas no Supabase." : `Não foi possível carregar os pedidos: ${dbError.message}`);
+        }
+        void reportClientEvent({
+          level: "error",
+          source: "initial_data",
+          action: "load",
+          message: dbError.message,
+          metadata: { code: dbError.code, offlineFallback: restored },
+        });
       } else {
         setError("");
+        setUsingOfflineSnapshot(false);
+        setOfflineSnapshotAt(null);
         const loadedOrders = (orderResult.data || []) as Order[];
+        const loadedSectors = (sectorResult.data || []) as Sector[];
         const loadedProfiles = (profileResult.data || []) as Profile[];
+        const loadedClients = (clientResult.data || []) as Client[];
         const loadedCurrentProfile = loadedProfiles.find((profile) => profile.id === user.id && profile.active) || null;
         const loadedCanOperate = loadedCurrentProfile?.role === "admin" || loadedCurrentProfile?.role === "manager" || loadedCurrentProfile?.role === "production";
-        setSectors((sectorResult.data || []) as Sector[]);
+        setSectors(loadedSectors);
         setOrders(loadedOrders);
         setProfiles(loadedProfiles);
-        setClients((clientResult.data || []) as Client[]);
+        setClients(loadedClients);
         setActiveView((current) => !loadedCurrentProfile || (loadedCurrentProfile.role !== "admin" && (current === "settings" || current === "users")) ? "kanban" : current);
         setModal((current) => !loadedCanOperate && current === "new" ? null : current);
         if (loadedCurrentProfile?.role !== "admin") setUserModalOpen(false);
-        if (!loadedCurrentProfile) {
-          setError("Seu perfil não está ativo. Peça a um administrador para revisar o seu acesso.");
-        }
-        const nextImageUrls: Record<string, string> = {};
-        const previousImageUrls = imageUrlsRef.current;
-        const previousImagePaths = imagePathsRef.current;
-        const reusableOrderIds = new Set<string>();
-
-        loadedOrders.forEach((order) => {
-          const path = order.main_image_path?.trim() || "";
-          const existingUrl = previousImageUrls[order.id];
-          if (path && existingUrl && previousImagePaths[order.id] === path) {
-            nextImageUrls[order.id] = existingUrl;
-            reusableOrderIds.add(order.id);
-            return;
-          }
-          if (path && /^https?:\/\//i.test(path)) nextImageUrls[order.id] = path;
-        });
-
-        const driveImages = loadedOrders.filter((order) =>
-          !reusableOrderIds.has(order.id) && driveThumbnailFileId(order.main_image_path),
-        );
-        const storedImages = loadedOrders.filter((order) =>
-          !reusableOrderIds.has(order.id)
-          && order.main_image_path
-          && !/^https?:\/\//i.test(order.main_image_path)
-          && !driveThumbnailFileId(order.main_image_path),
-        );
-        if (storedImages.length) {
-          const { data: signedImages } = await supabase.storage
-            .from("order-thumbnails")
-            .createSignedUrls(storedImages.map((order) => order.main_image_path as string), 86400);
-          storedImages.forEach((order, index) => {
-            const signedUrl = signedImages?.[index]?.signedUrl;
-            if (signedUrl) nextImageUrls[order.id] = signedUrl;
-          });
-        }
-        if (driveImages.length) {
-          const { data: sessionData } = await supabase.auth.getSession();
-          const accessToken = sessionData.session?.access_token;
-          if (accessToken) {
-            await forEachWithConcurrency(driveImages, 6, async (order) => {
-              const fileId = driveThumbnailFileId(order.main_image_path);
-              if (!fileId) return;
-              try {
-                const response = await fetch(`/api/google-drive/preview?file_id=${encodeURIComponent(fileId)}`, {
-                  cache: "no-store",
-                  headers: { authorization: `Bearer ${accessToken}` },
-                });
-                if (!response.ok) return;
-                nextImageUrls[order.id] = URL.createObjectURL(await response.blob());
-              } catch {
-                // O pedido continua disponível mesmo se a miniatura do Drive
-                // estiver temporariamente indisponível.
-              }
-            });
-          }
-        }
-        if (!active) {
-          Object.values(nextImageUrls).forEach((url) => { if (url.startsWith("blob:")) URL.revokeObjectURL(url); });
-          return;
-        }
-        setImageUrls((current) => {
-          Object.entries(current).forEach(([orderId, url]) => {
-            if (url.startsWith("blob:") && nextImageUrls[orderId] !== url) URL.revokeObjectURL(url);
-          });
-          imageUrlsRef.current = nextImageUrls;
-          imagePathsRef.current = Object.fromEntries(
-            loadedOrders
-              .filter((order) => Boolean(order.main_image_path?.trim()))
-              .map((order) => [order.id, order.main_image_path!.trim()]),
-          );
-          return nextImageUrls;
-        });
+        if (!loadedCurrentProfile) setError("Seu perfil não está ativo. Peça a um administrador para revisar o seu acesso.");
         setCommentCounts(commentCountResult.counts);
+
+        const savedAt = new Date().toISOString();
+        void saveOfflineSnapshot({
+          userId: user.id,
+          savedAt,
+          orders: ordersForOfflineSnapshot(loadedOrders),
+          sectors: loadedSectors,
+          clients: clientsForOfflineSnapshot(loadedClients, loadedOrders),
+          profiles: loadedProfiles.filter((profile) => profile.id === user.id),
+        })
+          .catch((cause) => reportClientEvent({
+            level: "warning",
+            source: "offline_snapshot",
+            action: "save",
+            message: cause instanceof Error ? cause.message : "Falha ao salvar a cópia offline.",
+          }));
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
+        if (accessToken) await loadImages(loadedOrders, accessToken);
       }
+
       initialDataLoadedRef.current = true;
-      setLoading(false);
+      if (active) setLoading(false);
     };
+
     void load();
-    let reloadTimer: ReturnType<typeof window.setTimeout> | null = null;
-    let commentsReloadTimer: ReturnType<typeof window.setTimeout> | null = null;
-    let clientsReloadTimer: ReturnType<typeof window.setTimeout> | null = null;
-
-    const scheduleLoad = () => {
-      if (reloadTimer) window.clearTimeout(reloadTimer);
-      // Uma única operação no banco pode disparar vários eventos de realtime.
-      // O pequeno agrupamento evita recarregar todas as listas repetidamente.
-      reloadTimer = window.setTimeout(() => void load(), 220);
-    };
-
-    const loadCommentCounts = async () => {
-      const result = await fetchOrderCommentCounts();
-      if (!active || result.error) return;
-      setCommentCounts(result.counts);
-    };
-
-    const loadClients = async () => {
-      const { data, error: clientsError } = await supabase.from("clients").select("*").order("name");
-      if (!active || clientsError) return;
-      setClients((data || []) as Client[]);
-    };
-
-    const scheduleCommentCounts = () => {
-      if (commentsReloadTimer) window.clearTimeout(commentsReloadTimer);
-      commentsReloadTimer = window.setTimeout(() => void loadCommentCounts(), 160);
-    };
-
-    const scheduleClients = () => {
-      if (clientsReloadTimer) window.clearTimeout(clientsReloadTimer);
-      clientsReloadTimer = window.setTimeout(() => void loadClients(), 180);
-    };
-
-    const channel = supabase.channel("orders-board")
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, scheduleLoad)
-      .on("postgres_changes", { event: "*", schema: "public", table: "order_comments" }, scheduleCommentCounts)
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, scheduleLoad)
-      .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, scheduleClients)
-      .subscribe();
-    return () => {
-      active = false;
-      if (reloadTimer) window.clearTimeout(reloadTimer);
-      if (commentsReloadTimer) window.clearTimeout(commentsReloadTimer);
-      if (clientsReloadTimer) window.clearTimeout(clientsReloadTimer);
-      void supabase.removeChannel(channel);
-    };
-  }, [user, reloadToken]);
+    return () => { active = false; };
+  }, [user, reloadToken, isOnline]);
 
   useEffect(() => {
-    if (modal && modal !== "new") void loadOrderDetails(modal.id);
-  }, [modal]);
+    if (!user || !isOnline || !initialDataLoadedRef.current) return;
+    const timer = window.setTimeout(() => {
+      void saveOfflineSnapshot({
+        userId: user.id,
+        savedAt: new Date().toISOString(),
+        orders: ordersForOfflineSnapshot(orders),
+        sectors,
+        clients: clientsForOfflineSnapshot(clients, orders),
+        profiles: profiles.filter((profile) => profile.id === user.id),
+      });
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [user, isOnline, orders, sectors, clients, profiles]);
+
+  useEffect(() => {
+    if (modal && modal !== "new" && isOnline) void loadOrderDetails(modal.id);
+    if (modal && modal !== "new" && !isOnline) {
+      setDetailLoading(false);
+      setDetailError("Modo offline: resumo disponível; histórico, comentários, materiais e arquivos exigem conexão.");
+    }
+  }, [modal, isOnline]);
 
   const activeOrders = useMemo(() => orders.filter((order) => order.status !== "completed"), [orders]);
   const completedOrders = useMemo(() => orders.filter((order) => order.status === "completed"), [orders]);
@@ -579,9 +647,97 @@ export default function Home() {
   );
   const profilesById = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
   const isAdmin = currentProfile?.role === "admin";
-  const canOperate = isAdmin || currentProfile?.role === "manager" || currentProfile?.role === "production";
+  const roleCanOperate = isAdmin || currentProfile?.role === "manager" || currentProfile?.role === "production";
+  const canOperate = Boolean(roleCanOperate && isOnline);
   const showOrderActions = canOperate && activeView === "orders";
-  const canUploadFiles = Boolean(currentProfile?.active);
+  const canUploadFiles = Boolean(currentProfile?.active && isOnline);
+  const handleRealtimeOrder = useCallback(async (payload: { eventType: "INSERT" | "UPDATE" | "DELETE"; new: Partial<Order>; old: Partial<Order> }) => {
+    const orderId = String((payload.eventType === "DELETE" ? payload.old.id : payload.new.id) || "");
+    if (!orderId) return;
+
+    if (payload.eventType === "DELETE") {
+      setOrders((current) => current.filter((order) => order.id !== orderId));
+      setImageUrls((current) => {
+        const next = { ...current };
+        const url = next[orderId];
+        if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+        delete next[orderId];
+        imageUrlsRef.current = next;
+        delete imagePathsRef.current[orderId];
+        return next;
+      });
+      return;
+    }
+
+    const incoming = payload.new as Order;
+    setOrders((current) => {
+      const exists = current.some((order) => order.id === incoming.id);
+      return exists
+        ? current.map((order) => order.id === incoming.id ? { ...order, ...incoming } : order)
+        : [...current, incoming];
+    });
+
+    const path = incoming.main_image_path?.trim() || "";
+    if (!path || imagePathsRef.current[incoming.id] === path) return;
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    const url = await fetchOptimizedOrderThumbnail(incoming, token);
+    if (!url) return;
+    setImageUrls((current) => {
+      const previous = current[incoming.id];
+      if (previous?.startsWith("blob:") && previous !== url) URL.revokeObjectURL(previous);
+      const next = { ...current, [incoming.id]: url };
+      imageUrlsRef.current = next;
+      imagePathsRef.current[incoming.id] = path;
+      return next;
+    });
+  }, []);
+
+  const handleRealtimeComment = useCallback(async (orderId: string) => {
+    const result = await fetchOrderCommentCount(orderId);
+    if (!result.error) setCommentCounts((current) => ({ ...current, [orderId]: result.count }));
+  }, []);
+
+  const handleRealtimeProfile = useCallback((payload: { eventType: "INSERT" | "UPDATE" | "DELETE"; new: Partial<Profile>; old: Partial<Profile> }) => {
+    const id = String((payload.eventType === "DELETE" ? payload.old.id : payload.new.id) || "");
+    if (!id) return;
+    setProfiles((current) => payload.eventType === "DELETE"
+      ? current.filter((profile) => profile.id !== id)
+      : current.some((profile) => profile.id === id)
+        ? current.map((profile) => profile.id === id ? { ...profile, ...payload.new } as Profile : profile)
+        : [...current, payload.new as Profile]);
+  }, []);
+
+  const handleRealtimeClient = useCallback((payload: { eventType: "INSERT" | "UPDATE" | "DELETE"; new: Partial<Client>; old: Partial<Client> }) => {
+    const id = String((payload.eventType === "DELETE" ? payload.old.id : payload.new.id) || "");
+    if (!id) return;
+    setClients((current) => payload.eventType === "DELETE"
+      ? current.filter((client) => client.id !== id)
+      : current.some((client) => client.id === id)
+        ? current.map((client) => client.id === id ? { ...client, ...payload.new } as Client : client)
+        : [...current, payload.new as Client]);
+  }, []);
+
+  const handleRealtimeSector = useCallback((payload: { eventType: "INSERT" | "UPDATE" | "DELETE"; new: Partial<Sector>; old: Partial<Sector> }) => {
+    const id = String((payload.eventType === "DELETE" ? payload.old.id : payload.new.id) || "");
+    if (!id) return;
+    setSectors((current) => payload.eventType === "DELETE"
+      ? current.filter((sector) => sector.id !== id)
+      : current.some((sector) => sector.id === id)
+        ? current.map((sector) => sector.id === id ? { ...sector, ...payload.new } as Sector : sector)
+        : [...current, payload.new as Sector]);
+  }, []);
+
+  usePcpRealtime({
+    enabled: Boolean(user && isOnline),
+    onOrderChange: handleRealtimeOrder,
+    onCommentChange: handleRealtimeComment,
+    onProfileChange: handleRealtimeProfile,
+    onClientChange: handleRealtimeClient,
+    onSectorChange: handleRealtimeSector,
+  });
+
   const installationSector = useMemo(() => activeSectors.find((sector) => sector.name === "INSTALAÇÃO") || null, [activeSectors]);
   const installationOrders = useMemo(() => activeOrders
     .filter((order) =>
@@ -790,8 +946,8 @@ export default function Home() {
     setMaterials([]);
     setChecklist([]);
     setOrderFiles([]);
-    setDetailError("");
-    setDetailTab(tab);
+    setDetailError(isOnline ? "" : "Modo offline: resumo disponível; histórico, comentários, materiais e arquivos exigem conexão.");
+    setDetailTab(isOnline ? tab : "summary");
     setModal(order);
   }
 
@@ -1020,7 +1176,7 @@ export default function Home() {
 
   async function addComment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!modal || modal === "new") return;
+    if (!modal || modal === "new" || !isOnline) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const text = String(form.get("comment") || "").trim();
@@ -1414,6 +1570,17 @@ export default function Home() {
     setDragged(null);
     if (!previous) return;
     await updateOrder(previous, { sector_id: sectorId, status: nextStatus }, "Pedido movimentado e histórico atualizado.");
+  }
+
+  async function moveSelectedOrder(sectorId: string, status: UiStatus) {
+    if (!moveOrderTarget || !canOperate) return;
+    const target = moveOrderTarget;
+    const moved = await updateOrder(
+      target,
+      { sector_id: sectorId, status: statusToDb[status] },
+      "Pedido movimentado e histórico atualizado.",
+    );
+    if (moved) setMoveOrderTarget(null);
   }
 
   async function finishOrder(order: Order) {
@@ -2016,179 +2183,89 @@ export default function Home() {
     </aside>
     {sidebarOpen && <button type="button" className="sidebar-backdrop" aria-label="Fechar menu" onClick={() => setSidebarOpen(false)} />}
     <section className="content">
-      <header><div className="page-heading"><button type="button" className="mobile-menu-button" aria-label="Abrir menu" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}>☰</button><div><p className="eyebrow">{viewMeta[activeView].eyebrow}</p><h1>{viewMeta[activeView].title}</h1><p>{viewMeta[activeView].description}</p></div></div><div className="header-actions"><span className="sync-status">● Conectado</span>{currentProfile && <span className="role-badge" data-role={isAdmin ? "admin" : canOperate ? "operator" : "user"}>{roleLabel[currentProfile.role]}</span>}{showOrderActions && <div className="header-order-actions" aria-label="Ações exclusivas da página de pedidos"><button type="button" className="pdf-import-header-button" onClick={() => { setError(""); setPdfImporterOpen(true); }} disabled={!activeSectors.length}>⇧ Importar PDF</button><button type="button" className="primary header-new-order" onClick={() => openNewOrder()} disabled={!activeSectors.length}>＋ Nova ordem</button></div>}</div></header>
+      <header><div className="page-heading"><button type="button" className="mobile-menu-button" aria-label="Abrir menu" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}>☰</button><div><p className="eyebrow">{viewMeta[activeView].eyebrow}</p><h1>{viewMeta[activeView].title}</h1><p>{viewMeta[activeView].description}</p></div></div><div className="header-actions"><span className={`sync-status ${isOnline ? "" : "offline"}`}>{isOnline ? "● Conectado" : "○ Offline"}</span>{currentProfile && <span className="role-badge" data-role={isAdmin ? "admin" : roleCanOperate ? "operator" : "user"}>{roleLabel[currentProfile.role]}</span>}{showOrderActions && <div className="header-order-actions" aria-label="Ações exclusivas da página de pedidos"><button type="button" className="pdf-import-header-button" onClick={() => { setError(""); setPdfImporterOpen(true); }} disabled={!activeSectors.length}>⇧ Importar PDF</button><button type="button" className="primary header-new-order" onClick={() => openNewOrder()} disabled={!activeSectors.length}>＋ Nova ordem</button></div>}</div></header>
       {error && <div className="db-alert"><b>Atenção</b><span>{error}</span></div>}{notice && <div className="toast">✓ {notice}</div>}
-      {activeView === "dashboard" && <section className="v3-dashboard">
-        <div className="v3-hero">
-          <div><span>PUBLICOLOR PCP</span><h2>Visão geral da operação</h2><p>Prioridades, gargalos e compromissos de instalação atualizados em tempo real.</p></div>
-        </div>
-        <div className="v3-kpi-grid">
-          <article><i>▦</i><small>Pedidos ativos</small><strong>{activeOrderCounts.orders}</strong><span>Ordens principais no fluxo</span></article>
-          <article><i>≡</i><small>Subpedidos ativos</small><strong>{activeOrderCounts.suborders}</strong><span>Itens vinculados às OPs</span></article>
-          <article><i>◷</i><small>Aguardando</small><strong>{activeOrders.filter((o) => o.status === "waiting").length}</strong><span>Dependem de ação</span></article>
-          <article className="danger"><i>!</i><small>Atrasados</small><strong>{activeOrders.filter((o) => dueLabel(o.delivery_date).startsWith("Atrasado")).length}</strong><span>Fora do prazo</span></article>
-          <article><i>↗</i><small>Em produção</small><strong>{activeOrders.filter((o) => o.status === "in_progress").length}</strong><span>Trabalho ativo</span></article>
-          <article><i>⌂</i><small>Instalações/entregas</small><strong>{installationOrders.filter((o) => o.installation_scheduled_at).length}</strong><span>Com data definida</span></article>
-          <article><i>✓</i><small>Concluídos</small><strong>{completedOrders.length}</strong><span>Histórico total</span></article>
-        </div>
-        <div className="v3-dashboard-grid">
-          <article className="v3-panel">
-            <header><div><span>CAPACIDADE</span><h3>Pedidos por setor</h3></div><button type="button" onClick={() => navigateTo("kanban")}>Abrir Kanban →</button></header>
-            <div className="v3-sector-list">{sectorReport.map((item) => <div key={item.sector.id}><label><span>{item.sector.name}</span><b>{item.count}</b></label><div><i style={{ width: `${(item.count / largestSectorCount) * 100}%` }} /></div></div>)}</div>
-          </article>
-          <article className="v3-panel">
-            <header><div><span>AGENDA</span><h3>Próximas instalações/entregas</h3></div><button type="button" onClick={() => navigateTo("installation")}>Ver agenda →</button></header>
-            <div className="v3-install-list">{installationOrders.filter((o) => o.installation_scheduled_at).slice(0, 5).map((order) => <button type="button" key={order.id} onClick={() => openOrder(order, "installation")}><time>{new Date(order.installation_scheduled_at!).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", timeZone: "America/Manaus" })}<small>{order.installation_time_confirmed ? new Date(order.installation_scheduled_at!).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Manaus" }) : "Horário a definir"}</small></time><span><b>OP {order.op_number}</b><small>{order.client_name}</small></span><i>›</i></button>)}{!installationOrders.some((o) => o.installation_scheduled_at) && <div className="view-empty">Nenhuma instalação ou entrega programada.</div>}</div>
-          </article>
-        </div>
-      </section>}
+      <OfflineModeBanner visible={!isOnline || usingOfflineSnapshot} savedAt={offlineSnapshotAt} />
+      {activeView === "dashboard" && <DashboardView
+        activeOrderCounts={activeOrderCounts}
+        activeOrders={activeOrders}
+        completedOrders={completedOrders}
+        installationOrders={installationOrders}
+        sectorReport={sectorReport}
+        largestSectorCount={largestSectorCount}
+        onNavigate={navigateTo}
+        onOpenOrder={openOrder}
+      />}
 
-      {activeView === "kanban" && <>
-      <section className="metrics">
-        <article><span className="metric-icon blue">▦</span><div><small>Pedidos ativos</small><strong>{activeOrderCounts.orders}</strong><em>Ordens principais</em></div></article>
-        <article><span className="metric-icon purple">≡</span><div><small>Subpedidos ativos</small><strong>{activeOrderCounts.suborders}</strong><em>Itens das OPs</em></div></article>
-        <article><span className="metric-icon yellow">◷</span><div><small>Aguardando</small><strong>{activeOrders.filter((o) => o.status === "waiting").length}</strong><em>Em fila de produção</em></div></article>
-        <article><span className="metric-icon red">!</span><div><small>Atrasados</small><strong>{activeOrders.filter((o) => dueLabel(o.delivery_date).startsWith("Atrasado")).length}</strong><em className="danger">Requer atenção</em></div></article>
-        <article><span className="metric-icon amber">⌑</span><div><small>Produção para hoje</small><strong>{activeOrders.filter((o) => dueLabel(o.delivery_date) === "Prazo hoje").length}</strong><em>Prioridade do dia</em></div></article>
-        <article><span className="metric-icon green">↗</span><div><small>Em andamento</small><strong>{activeOrders.filter((o) => o.status === "in_progress").length}</strong><em>Produção ativa</em></div></article>
-        <article><span className="metric-icon magenta">◉</span><div><small>Instalações/entregas</small><strong>{installationOrders.filter((o) => o.installation_scheduled_at).length}</strong><em>Com data definida</em></div></article>
-      </section>
-      <section className="toolbar"><label className="search-field">⌕<input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por OP, cliente ou serviço…" />{search && <button type="button" className="search-clear" aria-label="Limpar busca" onClick={() => setSearch("")}>×</button>}</label><button type="button" className={filtersOpen ? "active" : ""} onClick={() => setFiltersOpen((value) => !value)} aria-expanded={filtersOpen}>☷ Filtros {activeFilterCount > 0 && <b>{activeFilterCount}</b>}</button><button type="button" className="sort-button" onClick={cycleSortMode} title="Clique para alterar a ordenação">↕ {sortLabel[sortMode]}</button><span>{loading ? "Atualizando…" : `${filtered.length} pedido${filtered.length === 1 ? "" : "s"} encontrado${filtered.length === 1 ? "" : "s"}`}</span></section>
-      {filtersOpen && <>
-        <button type="button" className="filters-backdrop" aria-label="Fechar filtros" onClick={() => setFiltersOpen(false)} />
-        <section className="filters-panel" aria-label="Filtros do Kanban">
-          <div className="filters-panel-head"><div><b>Filtros</b><span>Refine os pedidos exibidos no Kanban.</span></div><button type="button" aria-label="Fechar filtros" onClick={() => setFiltersOpen(false)}>×</button></div>
-          <label>Setor<select value={sectorFilter} onChange={(event) => setSectorFilter(event.target.value)}><option value="all">Todos os setores</option>{activeSectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}</select></label>
-          <label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | DbStatus)}><option value="all">Todos os status</option><option value="waiting">Aguardando</option><option value="in_progress">Em andamento</option><option value="in_transport">Em transporte</option><option value="waiting_client">Aguardando cliente</option></select></label>
-          <label>Prioridade<select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value as "all" | Priority)}><option value="all">Todas as prioridades</option><option value="urgent">Urgente</option><option value="high">Alta</option><option value="normal">Normal</option><option value="low">Baixa</option></select></label>
-          <label>Responsável<select value={responsibleFilter} onChange={(event) => setResponsibleFilter(event.target.value)}><option value="all">Todos os responsáveis</option><option value={UNASSIGNED_RESPONSIBLE_FILTER}>Sem responsável</option>{consultantOptions.map((consultant) => <option key={consultant} value={normalizedResponsibleName(consultant)}>{consultant}</option>)}</select></label>
-          <label>Prazo de produção<select value={deadlineFilter} onChange={(event) => setDeadlineFilter(event.target.value as DeadlineFilter)}><option value="all">Todos os prazos</option><option value="late">Atrasados</option><option value="today">Produção para hoje</option><option value="next7">Próximos 7 dias</option></select></label>
-          <button type="button" className="clear-filters" onClick={clearFilters} disabled={!activeFilterCount && !search}>Limpar busca e filtros</button>
-          <button className="apply-filters" type="button" onClick={() => setFiltersOpen(false)}>Aplicar filtros</button>
-        </section>
-      </>}
-      {visibleSectors.length > 0 && <nav className="kanban-mobile-nav" aria-label="Navegação entre setores do Kanban">
-        <button type="button" className="kanban-sector-arrow" aria-label="Setor anterior" onClick={() => scrollToKanbanSector(activeKanbanSectorIndex - 1)} disabled={activeKanbanSectorIndex <= 0}>‹</button>
-        <div className="kanban-sector-current" aria-live="polite">
-          <small>SETOR {Math.min(activeKanbanSectorIndex + 1, visibleSectors.length)} DE {visibleSectors.length}</small>
-          <strong>{visibleSectors[activeKanbanSectorIndex]?.name || visibleSectors[0]?.name}</strong>
-          <span>Deslize para os lados ou use as setas.</span>
-        </div>
-        <button type="button" className="kanban-sector-arrow" aria-label="Próximo setor" onClick={() => scrollToKanbanSector(activeKanbanSectorIndex + 1)} disabled={activeKanbanSectorIndex >= visibleSectors.length - 1}>›</button>
-        <div className="kanban-sector-dots" role="tablist" aria-label="Setores disponíveis">
-          {visibleSectors.map((sector, index) => <button type="button" key={sector.id} role="tab" aria-selected={index === activeKanbanSectorIndex} aria-label={`Ir para ${sector.name}`} className={index === activeKanbanSectorIndex ? "active" : ""} onClick={() => scrollToKanbanSector(index)} />)}
-        </div>
-      </nav>}
-      <div
-        className="board-top-scroll"
-        ref={topScrollRef}
-        onScroll={() => syncKanbanScroll(topScrollRef.current, boardRef.current)}
-        aria-label="Rolagem horizontal superior do Kanban"
-      >
-        <div className="board-top-scroll-spacer" style={{ width: `${boardScrollWidth}px` }} />
-      </div>
-      <section
-        className="board"
-        ref={boardRef}
-        onScroll={handleKanbanScroll}
-      >
-        {visibleSectors.map((sector, sectorIndex) => <article className="sector" key={sector.id} data-sector-index={sectorIndex} data-sector-id={sector.id}>
-          <div className="sector-head"><div><i>{String(sector.position).padStart(2, "0")}</i><h2>{sector.name}</h2></div><span>{filtered.filter((o) => o.sector_id === sector.id).length}</span></div>
-          <div className="sector-body">
-          {statusesForSector(sector.name).map((status) => <div className={`lane ${dragOverLane === `${sector.id}:${status}` ? "drag-over" : ""}`} key={status} aria-label={`${sector.name} — ${status}`} onDragOver={(event) => { if (!canOperate) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverLane(`${sector.id}:${status}`); }} onDrop={() => void move(sector.id, status)}>
-            <div className="lane-head"><b><i className={`dot ${statusDotClass(status)}`} />{status}</b><span>{filtered.filter((o) => o.sector_id === sector.id && o.status === statusToDb[status]).length}</span></div>
-            {filtered.filter((o) => o.sector_id === sector.id && o.status === statusToDb[status]).map((order) => <div draggable={canOperate && busyOrderId !== order.id} aria-disabled={!canOperate} onDragStart={(event) => { if (!canOperate) { event.preventDefault(); return; } event.dataTransfer.effectAllowed = "move"; setDragged(order.id); }} onDragEnd={() => { setDragged(null); setDragOverLane(null); }} onClick={() => openOrder(order, "history")} className={`order ${priorityLabel[order.priority].toLowerCase()} ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-order" : ""}`} key={order.id}>
-              {isAdmin && <button type="button" className="delete-order-button" aria-label={`Apagar OP ${order.op_number}`} title="Apagar pedido" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void deleteOrder(order); }}>⌫</button>}
-              {cardImageUrl(order) ? <button
-                type="button"
-                className={`order-thumbnail ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-thumbnail" : ""}`}
-                aria-label={`Ampliar miniatura da OP ${order.op_number}`}
-                title="Clique para ampliar"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setImagePreviewZoom(1);
-                  setImagePreview({ src: cardImageUrl(order), alt: `Miniatura da OP ${order.op_number}` });
-                }}
-              ><img src={cardImageUrl(order)} alt={`Miniatura da OP ${order.op_number}`} width={160} height={160} loading="lazy" /></button> : <div className={`order-thumbnail ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-thumbnail" : ""}`}><div className="order-thumbnail-empty" aria-label="Pedido sem miniatura"><span>PNG</span><small>Sem miniatura</small></div></div>}
-              <div className="order-top"><b>OP {order.op_number}</b><div className="order-badges"><span className={`tag ${priorityLabel[order.priority].toLowerCase()}`}>{priorityLabel[order.priority]}</span></div></div>
-              <h3>{order.client_name}</h3><p className="order-service">{order.description}</p>
-              <div className="order-responsible" title={`Responsável: ${orderResponsibleName(order)}`}><span>{initials(orderResponsibleName(order))}</span><div><small>RESPONSÁVEL</small><b>{orderResponsibleName(order)}</b></div></div>
-              <div className={`due order-deadlines ${dueLabel(order.delivery_date).startsWith("Atrasado") ? "late" : ""}`}><span>Inst./entrega: <b>{orderTargetDateLabel(order)}</b></span><small>Produção: {dueLabel(order.delivery_date)}</small></div>
-              {canOperate && <div className="workflow-actions"><button type="button" className="finish-order" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void finishOrder(order); }}>✓ Finalizar</button></div>}
-              <footer className="card-actions"><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); openOrder(order, "history"); }}>↺ Histórico</button><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); openOrder(order, "comments"); }}>◌ {commentCounts[order.id] || 0} Comentários</button></footer>
-            </div>)}
-            {!filtered.some((o) => o.sector_id === sector.id && o.status === statusToDb[status]) && <div className="empty-lane">{canOperate ? "Solte um pedido aqui" : "Nenhum pedido"}</div>}
-          </div>)}
-          </div>
-        </article>)}
-        {!loading && hasActiveSearch && !filtered.length && <div className="search-empty"><span>⌕</span><b>Nenhum pedido encontrado</b><p>Tente alterar o termo pesquisado ou limpar os filtros.</p><button type="button" onClick={clearFilters}>Limpar busca e filtros</button></div>}
-        {!loading && !activeSectors.length && !error && <div className="empty-board">Nenhum setor cadastrado.</div>}
-      </section>
-      </>}
+      {activeView === "kanban" && <KanbanView
+        activeOrderCounts={activeOrderCounts}
+        activeOrders={activeOrders}
+        installationOrders={installationOrders}
+        filtered={filtered}
+        activeSectors={activeSectors}
+        visibleSectors={visibleSectors}
+        search={search}
+        filtersOpen={filtersOpen}
+        activeFilterCount={activeFilterCount}
+        sortMode={sortMode}
+        loading={loading}
+        sectorFilter={sectorFilter}
+        statusFilter={statusFilter}
+        priorityFilter={priorityFilter}
+        responsibleFilter={responsibleFilter}
+        deadlineFilter={deadlineFilter}
+        consultantOptions={consultantOptions}
+        activeKanbanSectorIndex={activeKanbanSectorIndex}
+        boardScrollWidth={boardScrollWidth}
+        boardRef={boardRef}
+        topScrollRef={topScrollRef}
+        dragOverLane={dragOverLane}
+        canOperate={canOperate}
+        isAdmin={Boolean(isAdmin && isOnline)}
+        busyOrderId={busyOrderId}
+        commentCounts={commentCounts}
+        hasActiveSearch={hasActiveSearch}
+        error={error}
+        cardImageUrl={cardImageUrl}
+        onSearchChange={setSearch}
+        onToggleFilters={() => setFiltersOpen((value) => !value)}
+        onCloseFilters={() => setFiltersOpen(false)}
+        onCycleSort={cycleSortMode}
+        onSectorFilterChange={setSectorFilter}
+        onStatusFilterChange={setStatusFilter}
+        onPriorityFilterChange={setPriorityFilter}
+        onResponsibleFilterChange={setResponsibleFilter}
+        onDeadlineFilterChange={setDeadlineFilter}
+        onClearFilters={clearFilters}
+        onScrollToSector={scrollToKanbanSector}
+        onTopScroll={() => syncKanbanScroll(topScrollRef.current, boardRef.current)}
+        onBoardScroll={handleKanbanScroll}
+        onDragStart={setDragged}
+        onDragEnd={() => { setDragged(null); setDragOverLane(null); }}
+        onDragOverLane={setDragOverLane}
+        onDrop={(sectorId, status) => void move(sectorId, status)}
+        onOpenOrder={openOrder}
+        onDeleteOrder={(order) => void deleteOrder(order)}
+        onPreview={(order, url) => { setImagePreviewZoom(1); setImagePreview({ src: url, alt: `Miniatura da OP ${order.op_number}` }); }}
+        onMoveOrder={setMoveOrderTarget}
+        onFinishOrder={(order) => void finishOrder(order)}
+      />}
 
-      {activeView === "orders" && <section className="management-view orders-management-view">
-        <div className="view-toolbar orders-view-toolbar">
-          <label className="orders-search-field">⌕<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar OP, subpedido, cliente, serviço ou responsável…" /></label>
-          <label className="orders-responsible-filter"><span>Responsável</span><select value={responsibleFilter} onChange={(event) => setResponsibleFilter(event.target.value)}><option value="all">Todos</option><option value={UNASSIGNED_RESPONSIBLE_FILTER}>Sem responsável</option>{consultantOptions.map((consultant) => <option key={consultant} value={normalizedResponsibleName(consultant)}>{consultant}</option>)}</select></label>
-          {(search || responsibleFilter !== "all") && <button type="button" className="orders-clear-filter" onClick={() => { setSearch(""); setResponsibleFilter("all"); }}>Limpar</button>}
-          <span>{activeOrderFamilies.length} OP(s) · {visibleActiveOrderCount} pedido(s) ativo(s)</span>
-        </div>
-        <div className="responsive-table grouped-orders-table">
-          <div className="table-head"><span>OP</span><span>Cliente e serviço</span><span>Setor</span><span>Responsável</span><span>Instalação / entrega</span><span>Ação</span></div>
-          {activeOrderFamilies.map((family) => {
-            const isFamily = family.hasSubOrders || family.orders.length > 1;
-            const isExpanded = expandedOrderFamilies.has(family.parentOp);
-            const firstOrder = family.orders[0];
-            const clientsInFamily = Array.from(new Set(family.orders.map((order) => order.client_name)));
-            const sectorNames = Array.from(new Set(family.orders.map((order) => sectors.find((sector) => sector.id === order.sector_id)?.name || "—")));
-            const responsibleNames = Array.from(new Set(family.orders.map(orderResponsibleName)));
-            const familyResponsible = responsibleNames.length === 1 ? responsibleNames[0] : `${responsibleNames.length} responsáveis`;
-            const nextDeliveryOrder = [...family.orders].sort((first, second) => orderTargetDate(first).localeCompare(orderTargetDate(second)))[0];
-            const familyIsLate = family.orders.some((order) => dueLabel(order.delivery_date).startsWith("Atrasado"));
-            const familyId = `order-family-${firstOrder.id}`;
-
-            return <div className={`order-family ${isExpanded ? "expanded" : ""}`} key={family.parentOp}>
-              <article className={`table-row order-parent-row ${isFamily ? "has-children" : "single-order"}`}>
-                <b className="order-parent-op">
-                  {isFamily ? <button
-                    type="button"
-                    className="order-family-toggle"
-                    aria-expanded={isExpanded}
-                    aria-controls={familyId}
-                    aria-label={`${isExpanded ? "Recolher" : "Expandir"} OP ${family.parentOp}`}
-                    onClick={() => toggleOrderFamily(family.parentOp)}
-                  ><span aria-hidden="true">›</span></button> : <span className="order-family-toggle-placeholder" />}
-                  <span>OP {family.parentOp}</span>
-                  {isFamily && <small>{family.orders.length} subpedido(s)</small>}
-                </b>
-                <div className="order-client-cell" data-label="Cliente e serviço">
-                  <strong>{clientsInFamily.length === 1 ? clientsInFamily[0] : `${clientsInFamily.length} clientes`}</strong>
-                  <small>{isFamily ? `Pedido pai com ${family.orders.length} itens vinculados. Expanda para consultar cada subpedido.` : firstOrder.description}</small>
-                </div>
-                <span className="order-sector-cell" data-label="Setor">{sectorNames.length === 1 ? sectorNames[0] : `${sectorNames.length} setores`}</span>
-                <span className="order-responsible-cell" data-label="Responsável"><i>{initials(familyResponsible)}</i><b>{familyResponsible}</b></span>
-                <span className={`order-delivery-cell ${familyIsLate ? "table-late" : ""}`} data-label="Instalação / entrega"><b>{isFamily ? `Próxima: ${orderTargetDateLabel(nextDeliveryOrder)}` : orderTargetDateLabel(firstOrder)}</b><small>Produção: {isFamily ? dueLabel(nextDeliveryOrder.delivery_date) : dueLabel(firstOrder.delivery_date)}</small></span>
-                <button type="button" onClick={() => isFamily ? toggleOrderFamily(family.parentOp) : openOrder(firstOrder, "history")}>
-                  {isFamily ? isExpanded ? "Recolher" : "Ver subpedidos" : "Ver pedido"}
-                </button>
-              </article>
-
-              {isFamily && isExpanded && <div className="order-family-children" id={familyId}>
-                {family.orders.map((order) => <article className="table-row order-child-row" key={order.id}>
-                  <b className="order-child-op"><span aria-hidden="true">↳</span> OP {order.op_number}</b>
-                  <div className="order-client-cell" data-label="Cliente e serviço"><strong>{order.client_name}</strong><small>{order.description}</small></div>
-                  <span className="order-sector-cell" data-label="Setor">{sectors.find((sector) => sector.id === order.sector_id)?.name || "—"}</span>
-                  <span className="order-responsible-cell" data-label="Responsável"><i>{initials(orderResponsibleName(order))}</i><b>{orderResponsibleName(order)}</b></span>
-                  <span className={`order-delivery-cell ${dueLabel(order.delivery_date).startsWith("Atrasado") ? "table-late" : ""}`} data-label="Instalação / entrega"><b>{orderTargetDateLabel(order)}</b><small>Produção: {dueLabel(order.delivery_date)}</small></span>
-                  <button type="button" onClick={() => openOrder(order, "history")}>Ver pedido</button>
-                </article>)}
-              </div>}
-            </div>;
-          })}
-        </div>
-        {!activeOrderFamilies.length && <div className="view-empty">Nenhum pedido ativo encontrado.</div>}
-      </section>}
+      {activeView === "orders" && <OrdersView
+        search={search}
+        responsibleFilter={responsibleFilter}
+        unassignedResponsibleValue={UNASSIGNED_RESPONSIBLE_FILTER}
+        consultantOptions={consultantOptions}
+        families={activeOrderFamilies}
+        visibleOrderCount={visibleActiveOrderCount}
+        sectors={sectors}
+        expandedFamilies={expandedOrderFamilies}
+        onSearchChange={setSearch}
+        onResponsibleFilterChange={setResponsibleFilter}
+        onClearFilters={() => { setSearch(""); setResponsibleFilter("all"); }}
+        onToggleFamily={toggleOrderFamily}
+        onOpenOrder={(order) => openOrder(order, "history")}
+      />}
 
       {activeView === "completed" && <CompletedOrdersView
         search={search}
@@ -2224,32 +2301,38 @@ export default function Home() {
         onEditClient={openEditClient}
       />}
 
-      {activeView === "reports" && <section className="management-view"><div className="summary-strip"><article><small>Pedidos ativos</small><strong>{activeOrders.length}</strong></article><article><small>Em andamento</small><strong>{activeOrders.filter((order) => order.status === "in_progress").length}</strong></article><article><small>Atrasados</small><strong>{activeOrders.filter((order) => dueLabel(order.delivery_date).startsWith("Atrasado")).length}</strong></article><article><small>Urgentes</small><strong>{activeOrders.filter((order) => order.priority === "urgent").length}</strong></article></div><div className="report-card"><div className="report-heading"><div><b>Distribuição por setor</b><small>Pedidos ativos neste momento</small></div><span>Atualização automática</span></div><div className="sector-bars">{sectorReport.map((item) => <div className="sector-bar" key={item.sector.id}><label><span>{item.sector.name}</span><b>{item.count}</b></label><div><i style={{ width: `${(item.count / largestSectorCount) * 100}%` }} /></div></div>)}</div></div></section>}
+      {activeView === "reports" && <ReportsView
+        activeOrders={activeOrders}
+        sectorReport={sectorReport}
+        largestSectorCount={largestSectorCount}
+      />}
 
-      {activeView === "users" && isAdmin && <section className="management-view">
-        <div className="users-panel">
-          <header>
-            <div><h2>Níveis de acesso</h2><p>Administrador gerencia tudo; Operador trabalha nos pedidos; Usuário apenas visualiza e comenta.</p></div>
-            <div className="users-panel-actions"><span className="role-badge" data-role="admin">Somente administrador</span><button type="button" className="primary new-user-button" onClick={() => { setUserCreateError(""); setUserModalOpen(true); }}>＋ Novo usuário</button></div>
-          </header>
-          {profiles.map((profile) => <article className="user-role-row" key={profile.id}><div><b>{profile.name || profile.email.split("@")[0]}</b><small>{profile.email} · {profile.active ? "Ativo" : "Inativo"}</small><span className="current-user-label">{profile.id === user.id ? "Sua conta" : roleLabel[profile.role]}</span></div><select className="user-role-select" value={profile.role === "manager" ? "production" : profile.role} disabled={profile.id === user.id || profileBusyId === profile.id || !profile.active} onChange={(event) => void changeUserRole(profile, event.target.value as "admin" | "production" | "viewer")} aria-label={`Nível de acesso de ${profile.name || profile.email}`}><option value="admin">Administrador</option><option value="production">Operador</option><option value="viewer">Usuário</option></select></article>)}
-        </div>
-        <div className="settings-security-note">ⓘ Use “Novo usuário” para enviar um convite. A pessoa criará a própria senha no primeiro acesso.</div>
-      </section>}
+      {activeView === "users" && isAdmin && <UsersView
+        profiles={profiles}
+        currentUserId={user.id}
+        profileBusyId={profileBusyId}
+        online={isOnline}
+        onNewUser={() => { setUserCreateError(""); setUserModalOpen(true); }}
+        onChangeRole={(profile, role) => void changeUserRole(profile, role)}
+      />}
 
-      {activeView === "settings" && isAdmin && <section className="management-view settings-view">
-        <div className="settings-grid">
-          <div className="settings-security-note">🔒 Os dados de conexão ficam protegidos na hospedagem e não são exibidos no navegador. Somente administradores visualizam esta área.</div>
-          <article className="settings-card"><span className="settings-icon">◉</span><div><small>CONTA ADMINISTRADORA</small><b>{user.email}</b><p>Seu acesso está autenticado e protegido pelo Supabase.</p></div></article>
-          <article className="settings-card"><span className="settings-icon">◆</span><div><small>BANCO DE DADOS</small><b>Supabase conectado</b><p>Pedidos, comentários, agenda e histórico estão sincronizados.</p></div></article>
-          <article className="settings-card"><span className="settings-icon">▦</span><div><small>SETORES ATIVOS</small><b>{activeSectors.length} setores</b><p>A ordem dos setores segue a configuração do banco.</p></div></article>
-          <article className="settings-card"><span className="settings-icon">✓</span><div><small>STATUS DO SISTEMA</small><b>Operacional</b><p>Interface e serviços carregados corretamente.</p></div></article>
-        </div>
-        <PlatformAdministrationSettings />
-        <GoogleDriveSettings />
-        <DataImportExportSettings orders={orders} clients={clients} sectors={sectors} onImportComplete={() => setReloadToken((current) => current + 1)} />
-      </section>}
+      {activeView === "settings" && isAdmin && <SettingsView
+        userEmail={user.email || ""}
+        activeSectors={activeSectors}
+        orders={orders}
+        clients={clients}
+        sectors={sectors}
+        online={isOnline}
+        onImportComplete={() => setReloadToken((current) => current + 1)}
+      />}
     </section>
+    {moveOrderTarget && <MoveOrderModal
+      order={moveOrderTarget}
+      sectors={activeSectors}
+      busy={busyOrderId === moveOrderTarget.id}
+      onClose={() => setMoveOrderTarget(null)}
+      onMove={moveSelectedOrder}
+    />}
     {pdfImporterOpen && <div className="overlay pdf-import-overlay" onMouseDown={() => { if (!creatingOrder) setPdfImporterOpen(false); }}><div className="modal pdf-import-modal" role="dialog" aria-modal="true" aria-labelledby="pdf-import-title" onMouseDown={(event) => event.stopPropagation()}><button type="button" className="close" aria-label="Fechar importador de PDF" disabled={creatingOrder} onClick={() => setPdfImporterOpen(false)}>×</button>
       <p className="eyebrow">IMPORTAÇÃO DE ORDEM DE SERVIÇO</p><h2 id="pdf-import-title">Cadastrar pedidos a partir de PDF</h2><p>O sistema identifica os campos, cria um item para cada página e usa a própria página como miniatura da OS.</p>
       <PdfOrderImporter
@@ -2408,7 +2491,7 @@ export default function Home() {
           <article className="feed-entry created"><i>✓</i><div><b>Pedido criado</b><p>O pedido entrou no fluxo de produção.</p><small>{dateTimeLabel(modal.created_at)}</small></div></article>
         </div> : <div className="comments-panel">
           <div className="comments-list">{comments.length ? comments.map((comment) => <article className="comment-entry" key={comment.id}><i>{initials(comment.author?.email || user.email)}</i><div><b>{comment.author?.name || comment.author?.email || "Usuário"}</b><p>{comment.comment}</p><small>{dateTimeLabel(comment.created_at)}</small></div></article>) : <div className="no-comments"><b>Nenhum comentário ainda</b><span>Use o campo abaixo para iniciar a conversa.</span></div>}</div>
-          <form className="comment-form" onSubmit={addComment}><textarea name="comment" placeholder="Adicionar comentário sobre este pedido…" maxLength={4000} required /><button type="submit" className="primary" disabled={commentSending}>{commentSending ? "Enviando…" : "Enviar comentário"}</button></form>
+          <form className="comment-form" onSubmit={addComment}><textarea name="comment" placeholder={isOnline ? "Adicionar comentário sobre este pedido…" : "Comentários indisponíveis no modo offline"} maxLength={4000} required disabled={!isOnline} /><button type="submit" className="primary" disabled={commentSending || !isOnline}>{commentSending ? "Enviando…" : isOnline ? "Enviar comentário" : "Somente leitura"}</button></form>
         </div>}
       </>}
     </div></div>}

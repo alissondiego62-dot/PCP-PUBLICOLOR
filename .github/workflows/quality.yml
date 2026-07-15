@@ -1,0 +1,87 @@
+name: Qualidade do Publicolor PCP
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm validate
+
+  responsive:
+    runs-on: ubuntu-latest
+    env:
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      NEXT_PUBLIC_APP_ENV: homologation
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:4173
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:4173
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.E2E_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: credentials
+        shell: bash
+        run: |
+          if [[ -n "$E2E_EMAIL" && -n "$E2E_PASSWORD" && -n "$NEXT_PUBLIC_SUPABASE_URL" && -n "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Teste responsivo ignorado: configure os secrets E2E do ambiente de homologação."
+          fi
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - if: steps.credentials.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.credentials.outputs.ready == 'true'
+        run: python -m pip install -r requirements-e2e.txt
+      - if: steps.credentials.outputs.ready == 'true'
+        run: python -m playwright install --with-deps chromium
+      - if: steps.credentials.outputs.ready == 'true'
+        shell: bash
+        run: |
+          pnpm dev -- --host 127.0.0.1 --port 4173 > /tmp/publicolor-dev.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          READY=false
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:4173/ > /dev/null; then
+              READY=true
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$READY" != "true" ]]; then
+            cat /tmp/publicolor-dev.log
+            exit 1
+          fi
+          pnpm test:e2e
+      - if: always() && steps.credentials.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: responsive-screenshots
+          path: test-results/responsive
+          if-no-files-found: ignore

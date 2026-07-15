@@ -50,3 +50,8 @@ next-env.d.ts
 
 # Supabase CLI local state
 /supabase/.temp/
+/playwright-report/
+/test-results/
+/blob-report/
+!.env.production.example
+!.env.homologation.example

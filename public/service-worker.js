@@ -1,5 +1,8 @@
-const CACHE_NAME = "publicolor-pcp-shell-v3.0.7";
+const SHELL_CACHE = "publicolor-pcp-shell-v3.1.0";
+const RUNTIME_CACHE = "publicolor-pcp-runtime-v3.1.0";
+const THUMBNAIL_CACHE = "publicolor-order-thumbnails-v1";
 const STATIC_ASSETS = [
+  "/",
   "/manifest.webmanifest",
   "/publicolor-logo.png",
   "/icons/publicolor-192.png",
@@ -10,13 +13,15 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)));
+  event.waitUntil(caches.open(SHELL_CACHE).then((cache) => cache.addAll(STATIC_ASSETS)));
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+    caches.keys().then((keys) => Promise.all(
+      keys.filter((key) => ![SHELL_CACHE, RUNTIME_CACHE, THUMBNAIL_CACHE].includes(key)).map((key) => caches.delete(key))
+    ))
   );
   self.clients.claim();
 });
@@ -24,22 +29,37 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
-
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(() => caches.match("/offline.html")));
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(request);
+        if (response.ok) {
+          const cache = await caches.open(RUNTIME_CACHE);
+          await cache.put(request, response.clone());
+          await cache.put("/", response.clone());
+        }
+        return response;
+      } catch {
+        return (await caches.match(request)) || (await caches.match("/")) || (await caches.match("/offline.html"));
+      }
+    })());
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-      if (response.ok && ["style", "script", "image", "font"].includes(request.destination)) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-      }
-      return response;
-    }))
-  );
+  if (["style", "script", "image", "font"].includes(request.destination)) {
+    event.respondWith((async () => {
+      const cached = await caches.match(request);
+      const networkPromise = fetch(request).then(async (response) => {
+        if (response.ok) {
+          const cache = await caches.open(RUNTIME_CACHE);
+          await cache.put(request, response.clone());
+        }
+        return response;
+      }).catch(() => null);
+      return cached || (await networkPromise) || Response.error();
+    })());
+  }
 });

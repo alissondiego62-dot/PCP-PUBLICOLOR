@@ -8,18 +8,16 @@ import "./navigation.css";
 import "./recovery.css";
 import "./kanban-cards.css";
 import "./pcp-v2.css";
-import "./responsive-v4.css";
 import "./agenda-calendar.css";
 import "./order-batch-form.css";
 import "./data-transfer.css";
 import "./google-drive.css";
 import "./platform-admin.css";
-import "./site-audit.css";
 import "./pdf-import.css";
 import "./activities.css";
-import "./responsive-2026.css";
-import "./kanban-mobile.css";
-import "./pwa.css";
+import "@/features/kanban/kanban-actions.css";
+import "@/features/settings/settings-enhancements.css";
+import "./responsive.css";
 import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 
 export const viewport: Viewport = {

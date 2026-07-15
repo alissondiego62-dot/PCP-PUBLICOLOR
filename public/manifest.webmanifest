@@ -1,16 +1,22 @@
 {
   "name": "Publicolor PCP",
   "short_name": "Publicolor",
-  "description": "Controle de produção, pedidos, Kanban e agenda da Publicolor.",
-  "start_url": "/",
+  "description": "PCP da Publicolor com Kanban móvel, agenda, pedidos e leitura offline controlada.",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone"],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
   "background_color": "#f4f1f5",
   "theme_color": "#4f1765",
   "orientation": "any",
   "lang": "pt-BR",
-  "categories": ["business", "productivity"],
+  "categories": [
+    "business",
+    "productivity"
+  ],
   "icons": [
     {
       "src": "/icons/publicolor-192.png",
@@ -30,5 +36,6 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "id": "/"
 }

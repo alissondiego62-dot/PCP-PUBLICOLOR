@@ -1,0 +1,1997 @@
+/* Publicolor PCP 3.1.0 — camada responsiva consolidada. */
+/* Origem: responsive-v4.css */
+/* Publicolor 2.0 — revisão responsiva geral (desktop, tablet e celular) */
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.content,
+.management-view,
+.orders-management-view,
+.responsive-table,
+.board,
+.sector,
+.sector-body,
+.lane,
+.order,
+.table-row,
+.table-row > * {
+  min-width: 0;
+}
+
+/* Filtros do Kanban: inclui responsável sem comprimir os demais campos. */
+.filters-panel {
+  grid-template-columns: repeat(5, minmax(132px, 1fr)) auto;
+  align-items: end;
+}
+
+/* Responsável exibido nos cartões do Kanban. */
+.sector {
+  flex: 0 0 clamp(286px, 24vw, 326px);
+  width: clamp(286px, 24vw, 326px);
+}
+
+.sector-body {
+  padding: 0 10px 10px;
+}
+
+.order,
+.order h3,
+.order-service,
+.order-responsible,
+.order-responsible > div {
+  min-width: 0;
+}
+
+.order h3,
+.order-service {
+  overflow-wrap: anywhere;
+}
+
+.order-responsible {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 8px 0 2px;
+  padding: 8px 9px;
+  border: 1px solid #e6dfea;
+  border-radius: 9px;
+  background: #faf7fb;
+}
+
+.order-responsible > span,
+.order-responsible-cell > i {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e9dfee;
+  color: #5f2f72;
+  font-style: normal;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.order-responsible > div {
+  display: grid;
+  gap: 2px;
+}
+
+.order-responsible small {
+  color: #8a7d8f;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .65px;
+}
+
+.order-responsible b {
+  overflow: hidden;
+  color: #49344f;
+  font-size: 9px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Barra de pesquisa e filtro da tela Todos os pedidos. */
+.orders-view-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(210px, 270px) auto auto;
+  gap: 10px;
+  height: auto;
+  min-height: 62px;
+}
+
+.orders-view-toolbar .orders-search-field {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.orders-view-toolbar .orders-responsible-filter {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  height: 42px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfc;
+  color: #796d7d;
+}
+
+.orders-responsible-filter > span {
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.orders-responsible-filter select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #3f3044;
+  font-size: 10px;
+}
+
+.orders-clear-filter {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid #ddd3e1;
+  border-radius: 8px;
+  background: #f7f2f9;
+  color: #633b71;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.orders-view-toolbar > span {
+  margin-left: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Tabela de pedidos: colunas fluidas e proteção contra sobreposição. */
+.grouped-orders-table .table-head,
+.grouped-orders-table .table-row {
+  grid-template-columns:
+    minmax(128px, .8fr)
+    minmax(250px, 2fr)
+    minmax(118px, .82fr)
+    minmax(150px, 1fr)
+    minmax(118px, .82fr)
+    minmax(98px, .65fr);
+  gap: 14px;
+  padding-left: 15px;
+  padding-right: 15px;
+}
+
+.grouped-orders-table .table-row {
+  min-height: 78px;
+}
+
+.grouped-orders-table .table-row > * {
+  min-width: 0;
+}
+
+.order-parent-op {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px 7px;
+}
+
+.order-parent-op > span:not(.order-family-toggle-placeholder) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-parent-op small {
+  grid-column: 2;
+  justify-self: start;
+  margin: 0;
+}
+
+.order-child-op {
+  overflow-wrap: anywhere;
+}
+
+.order-client-cell {
+  min-width: 0;
+}
+
+.order-client-cell strong,
+.order-client-cell small {
+  overflow-wrap: anywhere;
+}
+
+.order-client-cell small {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.order-sector-cell,
+.order-delivery-cell {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.order-responsible-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #4f3b55 !important;
+}
+
+.order-responsible-cell > b {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 9px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grouped-orders-table .table-row > button {
+  width: 100%;
+  min-width: 0;
+  padding: 0 8px;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+/* Tablet horizontal e notebooks menores. */
+@media (max-width: 1280px) {
+  .filters-panel {
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+  }
+
+  .grouped-orders-table .table-head,
+  .grouped-orders-table .table-row {
+    grid-template-columns:
+      minmax(120px, .75fr)
+      minmax(220px, 1.7fr)
+      minmax(108px, .75fr)
+      minmax(135px, .95fr)
+      minmax(110px, .75fr)
+      94px;
+    gap: 10px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .content {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .orders-view-toolbar {
+    grid-template-columns: minmax(230px, 1fr) minmax(200px, 250px) auto;
+  }
+
+  .orders-view-toolbar > span {
+    grid-column: 1 / -1;
+    width: 100%;
+    text-align: left;
+  }
+
+  .grouped-orders-table {
+    display: grid;
+    gap: 12px;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .grouped-orders-table .table-head {
+    display: none;
+  }
+
+  .grouped-orders-table .order-family {
+    border: 0;
+  }
+
+  .grouped-orders-table .order-parent-row,
+  .grouped-orders-table .order-child-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, .62fr);
+    grid-template-areas:
+      "client client"
+      "op action"
+      "sector responsible"
+      "delivery delivery";
+    gap: 10px 16px;
+    min-height: 0;
+    padding: 16px;
+    border: 1px solid var(--publicolor-line, var(--line));
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 7px 20px rgba(48, 23, 53, .055);
+  }
+
+  .grouped-orders-table .order-parent-row {
+    border-left: 4px solid #735084;
+  }
+
+  .grouped-orders-table .order-child-row,
+  .grouped-orders-table .order-child-row:first-child {
+    padding: 15px;
+    border: 1px solid var(--publicolor-line, var(--line)) !important;
+    border-left: 4px solid #d6c4df !important;
+  }
+
+  .grouped-orders-table .order-parent-op,
+  .grouped-orders-table .order-child-op {
+    grid-area: op;
+  }
+
+  .grouped-orders-table .order-client-cell {
+    grid-area: client;
+  }
+
+  .grouped-orders-table .order-sector-cell {
+    grid-area: sector;
+  }
+
+  .grouped-orders-table .order-responsible-cell {
+    grid-area: responsible;
+    flex-wrap: wrap;
+  }
+
+  .grouped-orders-table .order-responsible-cell::before {
+    content: attr(data-label);
+    flex: 0 0 100%;
+    color: #8b7f91;
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .65px;
+    text-transform: uppercase;
+  }
+
+  .grouped-orders-table .order-delivery-cell {
+    grid-area: delivery;
+  }
+
+  .grouped-orders-table .order-parent-row > button,
+  .grouped-orders-table .order-child-row > button {
+    grid-area: action;
+    align-self: center;
+    min-height: 42px;
+  }
+
+  .order-sector-cell::before,
+  .order-delivery-cell::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    color: #8b7f91;
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .65px;
+    text-transform: uppercase;
+  }
+
+  .order-responsible-cell::after {
+    content: "";
+  }
+
+  .order-family-children {
+    display: grid;
+    gap: 9px;
+    padding: 10px 0 0 14px;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .order-family-children::before {
+    position: static;
+    padding: 0 4px;
+  }
+}
+
+/* Tablet em orientação vertical. */
+@media (max-width: 820px) {
+  .orders-view-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(190px, .7fr);
+  }
+
+  .orders-clear-filter {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .sector {
+    flex-basis: 286px;
+    width: 286px;
+  }
+
+  .modal {
+    width: min(760px, 96vw) !important;
+  }
+
+  .detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Celular. */
+@media (max-width: 700px) {
+  .content {
+    padding-left: 13px !important;
+    padding-right: 13px !important;
+  }
+
+  .content > header {
+    margin-left: -13px;
+    margin-right: -13px;
+    padding-left: 13px;
+    padding-right: 13px;
+  }
+
+  .filters-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .board {
+    width: 100%;
+  }
+
+  .sector {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .sector-body {
+    padding: 0 8px 8px;
+  }
+
+  .order {
+    grid-template-columns: 92px minmax(0, 1fr);
+    column-gap: 10px;
+  }
+
+  .order-thumbnail,
+  .order-thumbnail img {
+    width: 92px;
+    height: 92px;
+  }
+
+  .order-top,
+  .order h3,
+  .order-service,
+  .order-responsible,
+  .due {
+    grid-column: 2;
+  }
+
+  .order-responsible {
+    margin-top: 6px;
+    padding: 6px 7px;
+  }
+
+  .order-responsible > span {
+    width: 25px;
+    height: 25px;
+    flex-basis: 25px;
+  }
+
+  .order-responsible b {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .workflow-actions,
+  .card-actions {
+    grid-column: 1 / -1;
+  }
+
+  .orders-view-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .orders-view-toolbar .orders-search-field,
+  .orders-view-toolbar .orders-responsible-filter,
+  .orders-clear-filter,
+  .orders-view-toolbar > span {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  .orders-view-toolbar .orders-responsible-filter {
+    height: 46px;
+  }
+
+  .orders-view-toolbar > span {
+    text-align: center;
+    white-space: normal;
+  }
+
+  .grouped-orders-table .order-parent-row,
+  .grouped-orders-table .order-child-row {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "client"
+      "op"
+      "sector"
+      "responsible"
+      "delivery"
+      "action";
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .grouped-orders-table .order-parent-row > div,
+  .grouped-orders-table .order-child-row > div,
+  .grouped-orders-table .order-parent-row > b,
+  .grouped-orders-table .order-child-row > b,
+  .grouped-orders-table .order-parent-row > span,
+  .grouped-orders-table .order-child-row > span,
+  .grouped-orders-table .order-parent-row > button,
+  .grouped-orders-table .order-child-row > button {
+    grid-column: 1 !important;
+    text-align: left !important;
+  }
+
+  .grouped-orders-table .order-parent-row > button,
+  .grouped-orders-table .order-child-row > button {
+    width: 100%;
+    min-height: 44px;
+    text-align: center !important;
+  }
+
+  .order-sector-cell,
+  .order-delivery-cell {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .order-sector-cell::before,
+  .order-delivery-cell::before {
+    margin: 0;
+  }
+
+  .order-responsible-cell::before {
+    content: attr(data-label);
+    width: 80px;
+    flex: 0 0 80px;
+    color: #8b7f91;
+    font-size: 7px;
+    font-weight: 900;
+    letter-spacing: .65px;
+    text-transform: uppercase;
+  }
+
+  .order-family-children {
+    padding-left: 9px;
+  }
+
+  .overlay {
+    align-items: end;
+    padding: 0;
+  }
+
+  .modal {
+    width: 100% !important;
+    max-width: none !important;
+    max-height: 96dvh !important;
+    padding: 20px 15px calc(20px + env(safe-area-inset-bottom)) !important;
+    border-radius: 18px 18px 0 0 !important;
+    overflow-x: hidden;
+  }
+
+  .modal .close {
+    position: sticky;
+    top: 0;
+    float: right;
+    z-index: 4;
+    background: #f5f1f6;
+  }
+
+  .v3-order-header {
+    padding-right: 0;
+  }
+
+  .v3-order-image {
+    height: 150px;
+  }
+
+  .v3-order-header h2 {
+    font-size: 20px !important;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-tabs {
+    width: 100%;
+    padding-bottom: 3px;
+  }
+
+  .form-grid,
+  .editable-order-form .form-grid,
+  .schedule-form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .actions,
+  .v3-production-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .actions button,
+  .v3-production-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 430px) {
+  .content h1 {
+    max-width: 190px;
+  }
+
+  .order {
+    grid-template-columns: 78px minmax(0, 1fr);
+    padding: 9px;
+  }
+
+  .order-thumbnail,
+  .order-thumbnail img {
+    width: 78px;
+    height: 78px;
+  }
+
+  .order-top {
+    padding-right: 28px;
+  }
+
+  .order-responsible {
+    grid-column: 1 / -1;
+  }
+
+  .due {
+    grid-column: 1 / -1;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-strip,
+  .v3-kpi-grid,
+  .client-profile-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Origem: site-audit.css */
+/* Publicolor 3.0 — camada final de estabilidade visual e responsividade.
+   Mantém a identidade existente e apenas impede compressões, sobreposições e
+   estouros em conteúdos dinâmicos. */
+
+:where(button, a, input, select, textarea, summary) {
+  font: inherit;
+}
+
+:where(button, input, select, textarea) {
+  max-width: 100%;
+}
+
+:where(
+  .content,
+  .content > *,
+  .management-view,
+  .management-view > *,
+  .settings-view,
+  .settings-view > *,
+  .v3-dashboard,
+  .v3-dashboard > *,
+  .modal,
+  .modal > *,
+  .form-grid,
+  .form-grid > *,
+  .platform-card,
+  .drive-settings-module,
+  .drive-upload-form,
+  .drive-upload-form > *,
+  .data-transfer-module,
+  .installation-agenda,
+  .agenda-calendar-layout,
+  .order-batch-form,
+  .order-batch-form > *
+) {
+  min-width: 0;
+}
+
+:where(
+  .order h3,
+  .order-service,
+  .table-row,
+  .client-record-card,
+  .completed-order-card,
+  .agenda-day-order-card,
+  .drive-connection-copy,
+  .drive-sync-feedback,
+  .platform-feedback,
+  .auth-error,
+  .db-alert,
+  .workspace-empty
+) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Modal da OS: sempre cabe na janela e mantém rolagem interna previsível. */
+.overlay {
+  overscroll-behavior: contain;
+}
+
+.modal {
+  width: min(920px, calc(100vw - 32px));
+  max-width: 100%;
+  max-height: calc(100dvh - 32px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.modal .close {
+  z-index: 5;
+  touch-action: manipulation;
+}
+
+.v3-order-header,
+.v3-order-header > *,
+.v3-detail-tabs,
+.os-workspace-panel,
+.os-section-heading,
+.os-section-heading > * {
+  min-width: 0;
+}
+
+.v3-detail-tabs {
+  display: flex;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.v3-detail-tabs button {
+  flex: 0 0 auto;
+}
+
+/* Arquivos: cartões fluidos e ações isoladas do conteúdo textual. */
+.os-file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr));
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.drive-file-card {
+  width: 100%;
+  min-width: 0;
+  align-items: start;
+}
+
+.drive-file-card .file-card-content,
+.drive-file-card .file-card-content > *,
+.drive-file-card .file-audit-info,
+.drive-file-card .file-actions {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.drive-file-card .file-card-content > b,
+.drive-file-card .file-card-content > small,
+.drive-file-card .file-card-content > p,
+.drive-file-card .file-audit-info span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.drive-file-card .file-actions {
+  position: static !important;
+  width: 100%;
+  margin-top: 9px;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.drive-file-card .file-actions :where(a, button) {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+.drive-upload-connection,
+.drive-upload-connection > *,
+.drive-upload-fields,
+.drive-upload-fields > * {
+  min-width: 0;
+}
+
+.drive-upload-connection .drive-connection-copy :where(b, small),
+.drive-upload-connection .drive-connection-actions :where(a, button) {
+  overflow-wrap: anywhere;
+}
+
+.drive-sync-feedback {
+  width: 100%;
+  line-height: 1.5;
+}
+
+/* Barras, cartões e configurações devem quebrar linha sem comprimir controles. */
+.view-toolbar,
+.header-actions,
+.platform-actions,
+.data-transfer-actions,
+.data-template-actions,
+.drive-connection-actions,
+.client-detail-actions,
+.completed-card-actions {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+:where(.responsive-table, .data-preview-table, .os-material-table) {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.toast {
+  max-width: min(560px, calc(100vw - 32px));
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Evita que elementos invisíveis de upload capturem cliques fora do rótulo. */
+:where(.drive-file-picker, .data-file-drop, .platform-sql-picker) {
+  position: relative;
+  overflow: hidden;
+}
+
+:where(.drive-file-picker, .data-file-drop, .platform-sql-picker) > input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .modal {
+    width: min(100%, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+  }
+
+  .drive-upload-connection {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .drive-upload-connection .drive-connection-actions {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .drive-upload-connection .drive-connection-actions :where(a, button) {
+    width: 100%;
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 700px) {
+  .overlay {
+    place-items: end center;
+    padding: 0;
+  }
+
+  .modal {
+    width: 100%;
+    max-height: 96dvh;
+    border-radius: 16px 16px 0 0;
+    padding: 22px 16px max(22px, env(safe-area-inset-bottom));
+    scrollbar-gutter: auto;
+  }
+
+  .modal .close {
+    position: sticky;
+    float: right;
+    top: 0;
+    margin: -8px -4px 0 8px;
+    background: rgba(255, 255, 255, .94);
+    box-shadow: 0 2px 8px rgba(20, 35, 40, .08);
+  }
+
+  .v3-order-header {
+    clear: both;
+  }
+
+  .os-section-heading,
+  .drive-settings-heading,
+  .data-transfer-heading,
+  .platform-heading,
+  .view-toolbar {
+    align-items: stretch;
+  }
+
+  .drive-file-card .file-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .drive-upload-connection .drive-connection-actions,
+  .platform-actions,
+  .data-transfer-actions,
+  .client-detail-actions,
+  .completed-card-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  :where(
+    .drive-upload-connection .drive-connection-actions,
+    .platform-actions,
+    .data-transfer-actions,
+    .client-detail-actions,
+    .completed-card-actions
+  ) :where(button, a) {
+    width: 100%;
+    min-height: 43px;
+  }
+
+  .toast {
+    top: max(12px, env(safe-area-inset-top));
+    right: 12px;
+    left: 12px;
+    max-width: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .modal {
+    padding-inline: 13px;
+  }
+
+  .os-file-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .drive-upload-connection {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* Publicolor 3.0.4 — criação/importação exclusiva da aba Pedidos */
+.app-shell:not([data-active-view="orders"]) .header-order-actions,
+.app-shell:not([data-active-view="orders"]) .pdf-import-header-button,
+.app-shell:not([data-active-view="orders"]) .header-new-order,
+.app-shell:not([data-active-view="orders"]) .v3-hero-actions {
+  display: none !important;
+}
+
+/* Origem: responsive-2026.css */
+/* PCP Publicolor 3.0 — camada responsiva final.
+   Este arquivo é carregado por último e consolida os ajustes de desktop,
+   notebook, tablet e celular sem alterar as regras de negócio. */
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+.content,
+.content > header,
+.page-heading,
+.page-heading > div,
+.header-actions,
+.management-view,
+.v3-dashboard,
+.v3-dashboard-grid,
+.v3-panel,
+.settings-view,
+.platform-admin-section,
+.platform-card,
+.google-drive-settings,
+.data-transfer-settings,
+.activities-view,
+.installation-agenda {
+  min-width: 0;
+}
+
+.content {
+  overflow-x: clip;
+}
+
+.content > header {
+  gap: 18px;
+}
+
+.page-heading > div {
+  overflow-wrap: anywhere;
+}
+
+.header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.header-order-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(132px, auto));
+  gap: 8px;
+}
+
+.header-order-actions button {
+  white-space: nowrap;
+}
+
+/* Dashboard */
+.v3-kpi-grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)) !important;
+  overflow: visible !important;
+}
+
+.v3-kpi-grid article {
+  min-width: 0;
+}
+
+.v3-dashboard-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr);
+}
+
+.v3-panel,
+.v3-panel > header,
+.v3-install-list > button {
+  min-width: 0;
+}
+
+.v3-sector-list label span,
+.v3-install-list span,
+.v3-install-list b,
+.v3-install-list small {
+  overflow-wrap: anywhere;
+}
+
+/* Produção */
+.metrics {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.metrics article {
+  min-width: 0;
+}
+
+.toolbar {
+  height: auto;
+  min-height: 55px;
+  flex-wrap: wrap;
+}
+
+.toolbar .search-field {
+  min-width: min(320px, 100%);
+}
+
+.toolbar > span {
+  white-space: normal;
+  text-align: right;
+}
+
+.filters-panel {
+  max-width: min(1120px, calc(100vw - 34px));
+  max-height: min(78dvh, 720px);
+  overflow: auto;
+}
+
+.board-shell,
+.board,
+.sector,
+.sector-body,
+.lane {
+  min-width: 0;
+}
+
+.board {
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-gutter: stable;
+}
+
+.sector {
+  scroll-snap-align: start;
+}
+
+.order-thumbnail img,
+.v3-order-image img {
+  display: block;
+}
+
+/* Pedidos e demais tabelas */
+.responsive-table,
+.data-preview-table,
+.platform-history-list,
+.order-files-list {
+  max-width: 100%;
+}
+
+.data-preview-table,
+.platform-sql-preview,
+.order-files-list {
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.table-row > *,
+.order-client-cell,
+.order-responsible-cell,
+.order-delivery-cell {
+  min-width: 0;
+}
+
+/* Formulários e configurações */
+.settings-grid,
+.platform-environment-grid,
+.platform-automation-grid,
+.platform-sql-summary,
+.google-drive-grid,
+.data-transfer-grid {
+  min-width: 0;
+}
+
+.platform-card input,
+.platform-card select,
+.platform-card textarea,
+.google-drive-settings input,
+.google-drive-settings select,
+.data-transfer-settings input,
+.data-transfer-settings select {
+  width: 100%;
+  min-width: 0;
+}
+
+.platform-card,
+.settings-card,
+.drive-card,
+.data-transfer-card {
+  overflow: hidden;
+}
+
+.platform-actions {
+  flex-wrap: wrap;
+}
+
+.platform-actions button {
+  min-height: 42px;
+}
+
+/* Modais */
+.overlay {
+  overscroll-behavior: contain;
+}
+
+.modal {
+  max-width: calc(100vw - 32px) !important;
+  max-height: min(92dvh, 920px) !important;
+  overscroll-behavior: contain;
+}
+
+.modal input,
+.modal select,
+.modal textarea,
+.modal button {
+  max-width: 100%;
+}
+
+.detail-tabs {
+  scrollbar-width: thin;
+}
+
+/* Notebook e tablet horizontal */
+@media (max-width: 1180px) {
+  .v3-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .v3-panel {
+    min-height: 0;
+  }
+
+  .header-actions {
+    max-width: 48%;
+  }
+
+  .platform-environment-grid,
+  .platform-automation-grid,
+  .data-transfer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .content > header {
+    align-items: flex-start;
+  }
+
+  .header-actions {
+    max-width: none;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .filters-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .settings-grid,
+  .google-drive-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+/* Tablet vertical e celular */
+@media (max-width: 700px) {
+  :root {
+    --mobile-page-padding: 13px;
+  }
+
+  body {
+    min-width: 320px;
+  }
+
+  button,
+  [role="button"],
+  input,
+  select {
+    min-height: 44px;
+  }
+
+  .content {
+    padding: 16px var(--mobile-page-padding) calc(28px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .content > header {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin: 0 calc(var(--mobile-page-padding) * -1) 4px;
+    padding: 0 var(--mobile-page-padding) 12px;
+  }
+
+  .page-heading {
+    width: 100%;
+  }
+
+  .page-heading > div {
+    flex: 1;
+  }
+
+  .content h1 {
+    max-width: none !important;
+    font-size: clamp(21px, 7vw, 27px);
+    line-height: 1.12;
+  }
+
+  .content header p {
+    display: block;
+    line-height: 1.45;
+  }
+
+  .header-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    justify-content: stretch;
+  }
+
+  .header-actions .sync-status {
+    display: inline-flex;
+    justify-self: start;
+  }
+
+  .header-actions .role-badge {
+    justify-self: end;
+  }
+
+  .header-order-actions {
+    grid-column: 1 / -1;
+    width: 100%;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .header-order-actions button {
+    width: 100%;
+    padding-inline: 10px !important;
+    white-space: normal;
+  }
+
+  .v3-hero {
+    min-height: 0;
+    padding: 22px 18px;
+  }
+
+  .v3-hero::after {
+    opacity: .65;
+  }
+
+  .v3-hero h2 {
+    font-size: clamp(23px, 8vw, 29px);
+  }
+
+  .v3-kpi-grid,
+  .metrics {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    overflow: visible !important;
+  }
+
+  .v3-kpi-grid article,
+  .metrics article {
+    min-width: 0 !important;
+    padding: 13px;
+  }
+
+  .v3-kpi-grid article {
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 3px 8px;
+  }
+
+  .v3-kpi-grid i,
+  .metric-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .v3-panel {
+    padding: 15px;
+  }
+
+  .v3-panel > header {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .v3-panel > header button {
+    min-height: 36px;
+    padding: 0;
+  }
+
+  .v3-install-list > button {
+    grid-template-columns: 48px minmax(0, 1fr) 10px;
+  }
+
+  .toolbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 10px;
+  }
+
+  .toolbar .search-field,
+  .toolbar > span {
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
+  }
+
+  .toolbar > span {
+    display: block !important;
+    margin: 0;
+    text-align: center;
+  }
+
+  .toolbar button {
+    width: 100%;
+  }
+
+  .filters-panel {
+    position: fixed !important;
+    inset: auto 10px calc(10px + env(safe-area-inset-bottom)) 10px !important;
+    width: auto !important;
+    max-width: none;
+    max-height: 82dvh;
+    grid-template-columns: 1fr !important;
+    padding: 16px;
+    border-radius: 18px;
+    z-index: 80;
+  }
+
+  .board-top-scroll {
+    display: none;
+  }
+
+  .board {
+    gap: 10px;
+    padding-bottom: 12px;
+    scroll-snap-type: x mandatory;
+  }
+
+  .sector {
+    flex: 0 0 100% !important;
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+
+  .settings-grid,
+  .google-drive-grid,
+  .platform-environment-grid,
+  .platform-automation-grid,
+  .platform-sql-summary,
+  .data-transfer-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .settings-security-note {
+    grid-column: 1 !important;
+  }
+
+  .platform-card,
+  .drive-card,
+  .data-transfer-card,
+  .settings-card {
+    padding: 15px !important;
+  }
+
+  .platform-card-title,
+  .platform-section-heading,
+  .drive-section-heading,
+  .data-transfer-heading {
+    align-items: flex-start;
+  }
+
+  .platform-actions,
+  .data-import-footer,
+  .drive-actions {
+    display: grid !important;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .platform-actions button,
+  .data-import-footer button,
+  .drive-actions button {
+    width: 100%;
+  }
+
+  .modal {
+    max-width: 100vw !important;
+    max-height: 96dvh !important;
+  }
+
+  .client-detail-actions {
+    width: 100%;
+  }
+
+  .client-detail-actions button {
+    width: 100%;
+  }
+
+  .agenda-card,
+  .activity-card,
+  .client-record-card {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 430px) {
+  .header-order-actions,
+  .v3-kpi-grid,
+  .metrics {
+    grid-template-columns: 1fr !important;
+  }
+
+  .v3-kpi-grid article,
+  .metrics article {
+    min-height: 86px;
+  }
+
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar > * {
+    grid-column: 1 !important;
+  }
+
+  .v3-install-list > button {
+    grid-template-columns: 1fr 16px;
+  }
+
+  .v3-install-list time {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+  }
+
+  .detail-grid,
+  .summary-strip,
+  .client-profile-grid,
+  .agenda-summary {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* Origem: kanban-mobile.css */
+/* Publicolor 3.0.7 — Kanban por setor em tablet e celular.
+   Este arquivo é carregado por último para neutralizar regras antigas de
+   acordeão/empilhamento e manter uma coluna por vez com rolagem lateral. */
+
+.kanban-mobile-nav {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .board-top-scroll {
+    display: none !important;
+  }
+
+  .kanban-mobile-nav {
+    position: sticky;
+    top: 8px;
+    z-index: 16;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    margin: 10px 0 11px;
+    padding: 9px;
+    border: 1px solid #ded4e3;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .96);
+    box-shadow: 0 10px 28px rgba(47, 22, 56, .1);
+    backdrop-filter: blur(12px);
+  }
+
+  .kanban-sector-arrow {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid #d9cce0;
+    border-radius: 11px;
+    background: #f5f0f7;
+    color: #521b68;
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1;
+    touch-action: manipulation;
+  }
+
+  .kanban-sector-arrow:disabled {
+    opacity: .32;
+    cursor: default;
+  }
+
+  .kanban-sector-current {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+    text-align: center;
+  }
+
+  .kanban-sector-current small {
+    color: #866d8e;
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .75px;
+  }
+
+  .kanban-sector-current strong {
+    overflow: hidden;
+    color: #2f1838;
+    font-size: 13px;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .kanban-sector-current span {
+    color: #7f7183;
+    font-size: 9px;
+  }
+
+  .kanban-sector-dots {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 2px 4px 1px;
+    scrollbar-width: none;
+  }
+
+  .kanban-sector-dots::-webkit-scrollbar {
+    display: none;
+  }
+
+  .kanban-sector-dots button {
+    flex: 0 0 auto;
+    width: 7px;
+    min-width: 7px;
+    height: 7px;
+    min-height: 7px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: #d9cde0;
+  }
+
+  .kanban-sector-dots button.active {
+    width: 22px;
+    background: #5b1d73;
+  }
+
+  .board {
+    display: flex !important;
+    align-items: flex-start;
+    gap: 12px !important;
+    width: 100% !important;
+    max-width: 100%;
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    padding: 2px 2px 18px !important;
+    scroll-behavior: smooth;
+    scroll-padding-inline: 2px;
+    scroll-snap-type: x mandatory !important;
+    scrollbar-color: #6b367e #eee8f1;
+    scrollbar-width: thin;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .board > .sector {
+    flex: 0 0 min(520px, calc(100% - 46px)) !important;
+    width: min(520px, calc(100% - 46px)) !important;
+    min-width: min(520px, calc(100% - 46px)) !important;
+    max-width: none !important;
+    scroll-snap-align: start !important;
+    scroll-snap-stop: always;
+  }
+
+  .sector-head {
+    cursor: default !important;
+  }
+
+  .sector-chevron {
+    display: none !important;
+  }
+
+  .sector.mobile-collapsed .sector-body,
+  .sector-body {
+    display: block !important;
+  }
+
+  .board > .search-empty,
+  .board > .empty-board {
+    flex: 0 0 100%;
+    min-width: 100%;
+  }
+}
+
+@media (max-width: 700px) {
+  .kanban-mobile-nav {
+    top: max(6px, env(safe-area-inset-top));
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
+    gap: 7px;
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: 13px;
+  }
+
+  .kanban-sector-arrow {
+    width: 42px;
+    height: 42px;
+    min-height: 42px;
+  }
+
+  .kanban-sector-current span {
+    display: none;
+  }
+
+  .board {
+    gap: 8px !important;
+    margin-inline: 0;
+    padding-inline: 0 !important;
+    padding-bottom: 12px !important;
+    scrollbar-width: none;
+  }
+
+  .board::-webkit-scrollbar {
+    display: none;
+  }
+
+  .board > .sector {
+    flex-basis: 100% !important;
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+
+  .sector {
+    border-radius: 13px !important;
+  }
+
+  .sector-head {
+    min-height: 50px;
+    padding: 10px 11px !important;
+  }
+
+  .sector-body {
+    padding: 0 7px 8px !important;
+  }
+
+  .lane {
+    min-width: 0;
+  }
+
+  .order {
+    touch-action: pan-x pan-y;
+  }
+
+  .order-thumbnail img {
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+}
+
+@media (max-width: 430px) {
+  .kanban-sector-current strong {
+    font-size: 12px;
+  }
+
+  .kanban-sector-dots {
+    justify-content: flex-start;
+  }
+
+  .sector-head h2 {
+    font-size: 13px !important;
+  }
+
+  .order {
+    grid-template-columns: 78px minmax(0, 1fr) !important;
+    column-gap: 8px !important;
+    padding: 9px !important;
+  }
+
+  .order-thumbnail,
+  .order-thumbnail img {
+    width: 78px !important;
+    height: 78px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board {
+    scroll-behavior: auto;
+  }
+}
+
+/* Origem: pwa.css */
+/* Instalação do PCP como aplicativo em celular e tablet. */
+.pwa-install-prompt {
+  position: fixed;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 120;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: min(470px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid #d9cce0;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 20px 55px rgba(37, 15, 45, .24);
+  backdrop-filter: blur(14px);
+}
+
+.pwa-install-prompt > img {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+}
+
+.pwa-install-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.pwa-install-copy strong {
+  color: #32163d;
+  font-size: 13px;
+}
+
+.pwa-install-copy span {
+  color: #756d78;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.pwa-install-button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #5b1d73;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pwa-install-close {
+  position: absolute;
+  top: -9px;
+  right: -7px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid #d8cedc;
+  border-radius: 50%;
+  background: #fff;
+  color: #6b5d70;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.pwa-ios-instructions {
+  grid-column: 1 / -1;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: #f4eff6;
+  color: #594c5e;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+@media (min-width: 1101px) {
+  .pwa-install-prompt {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .pwa-install-prompt {
+    left: 10px;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: auto;
+    grid-template-columns: 42px minmax(0, 1fr);
+    padding: 11px 12px;
+  }
+
+  .pwa-install-prompt > img {
+    width: 42px;
+    height: 42px;
+  }
+
+  .pwa-install-button {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 43px;
+  }
+}
+
+@media (display-mode: standalone) and (max-width: 700px) {
+  .content {
+    padding-top: max(16px, env(safe-area-inset-top)) !important;
+  }
+
+  .sidebar {
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+  }
+}
+
+/* Ajustes finais 3.1.0 */
+.offline-mode-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px 13px;
+  border: 1px solid #e8c56d;
+  border-radius: 11px;
+  background: #fff8df;
+  color: #6b4d00;
+  font-size: 12px;
+}
+.offline-mode-banner span { min-width: 0; overflow-wrap: anywhere; }
+.sync-status.offline { background: #fff4d2; color: #8a5c00; border-color: #e7c765; }
+
+@media (max-width: 700px) {
+  .offline-mode-banner { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .board { scroll-padding-inline: 0; overscroll-behavior-inline: contain; }
+  .board > .sector { scroll-snap-align: start; scroll-snap-stop: always; }
+}

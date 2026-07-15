@@ -5,12 +5,17 @@ import {
   getSupabaseAdmin,
   requireAppUser,
   responseMessage,
+  type AuthorizedAppUser,
 } from "@/lib/server/supabase-server";
 import { buildDriveThumbnailPath } from "@/lib/order-thumbnail";
+import { logSystemEvent } from "@/lib/server/observability";
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
+  let actor: AuthorizedAppUser | null = null;
+  let orderIdForLog: string | null = null;
   try {
-    const actor = await requireAppUser(request, ["admin"]);
+    actor = await requireAppUser(request, ["admin"]);
     const body = await request.json() as {
       order_id?: string;
       new_drive_file_id?: string;
@@ -18,6 +23,7 @@ export async function POST(request: Request) {
     };
 
     const orderId = String(body.order_id || "").trim();
+    orderIdForLog = orderId || null;
     const newFileId = String(body.new_drive_file_id || "").trim();
     const previousFileId = String(body.previous_drive_file_id || "").trim();
     if (!orderId || !newFileId) {
@@ -71,7 +77,7 @@ export async function POST(request: Request) {
       if (previousLookupError) {
         previousWarning = `A nova miniatura foi definida, mas não foi possível localizar a anterior: ${previousLookupError.message}`;
       } else if ((previousRecords || []).length > 0) {
-        const previousIds = (previousRecords || []).map((record) => record.id);
+        const previousIds = (previousRecords || []).map((record: { id: string }) => record.id);
         const { error: markError } = await admin
           .from("order_files")
           .update({
@@ -105,6 +111,19 @@ export async function POST(request: Request) {
       }
     }
 
+    await logSystemEvent({
+      kind: "integration",
+      level: previousWarning ? "warning" : "info",
+      source: "thumbnail_zip",
+      action: "finalize",
+      status: previousWarning ? "warning" : "success",
+      message: previousWarning || `Miniatura ZIP aplicada à OP ${order.op_number}.`,
+      orderId,
+      durationMs: Date.now() - startedAt,
+      metadata: { replacedPrevious, newFileId },
+      actor,
+    });
+
     return Response.json({
       ok: true,
       order_id: orderId,
@@ -114,6 +133,17 @@ export async function POST(request: Request) {
       previous_warning: previousWarning,
     });
   } catch (error) {
+    await logSystemEvent({
+      kind: "api_error",
+      level: "error",
+      source: "thumbnail_zip",
+      action: "finalize",
+      status: "error",
+      message: error instanceof Error ? error.message : "Falha desconhecida ao finalizar miniatura ZIP.",
+      orderId: orderIdForLog,
+      durationMs: Date.now() - startedAt,
+      actor,
+    });
     return responseMessage(error);
   }
 }

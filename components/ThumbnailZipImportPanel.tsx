@@ -5,6 +5,7 @@ import type { ChangeEvent } from "react";
 import { unzipSync } from "fflate";
 import { driveAuthenticatedJson, uploadFileToOrderDrive } from "@/lib/google-drive-client";
 import { driveThumbnailFileId } from "@/lib/order-thumbnail";
+import { reportClientEvent } from "@/services/observability-client";
 
 type ThumbnailOrder = {
   id: string;
@@ -191,6 +192,20 @@ export function ThumbnailZipImportPanel() {
       oversizedFiles,
     });
     setResult(null);
+    void reportClientEvent({
+      level: unmatchedFiles.length || duplicateFiles.length || oversizedFiles.length ? "warning" : "info",
+      source: "thumbnail_zip",
+      action: "analyze",
+      message: `ZIP analisado: ${planned.length} OP(s) localizada(s), ${unmatchedFiles.length} arquivo(s) sem OP.`,
+      metadata: {
+        zipName: file.name,
+        pngFiles: pngEntries.length,
+        matchedOrders: planned.length,
+        unmatchedFiles: unmatchedFiles.slice(0, 50),
+        duplicateCount: duplicateFiles.length,
+        oversizedCount: oversizedFiles.length,
+      },
+    });
 
     return planned.length;
   }
@@ -291,6 +306,19 @@ export function ThumbnailZipImportPanel() {
     setCurrentFile("");
     setFileProgress(0);
     setBusy("");
+    void reportClientEvent({
+      level: importResult.errors.length ? "warning" : "info",
+      source: "thumbnail_zip",
+      action: "batch_complete",
+      message: `${importResult.uploaded} miniatura(s) importada(s), ${importResult.errors.length} erro(s).`,
+      metadata: {
+        uploaded: importResult.uploaded,
+        replaced: importResult.replaced,
+        errors: importResult.errors.slice(0, 30),
+        warnings: importResult.warnings.slice(0, 30),
+        cancelled: cancelRequestedRef.current,
+      },
+    });
     setFeedback({
       type: importResult.errors.length ? "warning" : "success",
       text: cancelRequestedRef.current

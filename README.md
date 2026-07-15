@@ -1,71 +1,77 @@
-# PCP Publicolor 3.0
+# Publicolor PCP 3.1.0
 
-Sistema web de PCP para controle de pedidos, produção, agenda de instalação/entrega, clientes, atividades, arquivos e histórico.
+Sistema web de planejamento e controle de produção da Publicolor, com Dashboard, Kanban, Pedidos, agenda de instalação/entrega, clientes, atividades, arquivos, histórico e integrações com Supabase e Google Drive.
 
 ## Requisitos
 
 - Node.js 24.x
-- pnpm 11.12
-- Projeto Supabase configurado
-- Projeto Vercel configurado
-- Google Drive OAuth configurado para o módulo de arquivos
+- pnpm 11.12.0
+- dois ambientes separados para produção e homologação
+- Supabase configurado em cada ambiente
+- Vercel configurada em cada ambiente
+- Google Drive OAuth configurado para os arquivos das OPs
 
 ## Instalação local
 
 ```bash
-pnpm install
+corepack enable
+pnpm install --frozen-lockfile
 cp .env.example .env.local
 pnpm dev
 ```
 
-## Validação antes de publicar
+## Validação
 
 ```bash
 pnpm validate
 ```
 
-## Publicação
+Os testes responsivos usam Playwright Python e as credenciais do banco de homologação:
 
-O projeto está preparado para Vercel. O diretório raiz da Vercel deve apontar para a raiz deste repositório.
+```bash
+python -m pip install -r requirements-e2e.txt
+python -m playwright install chromium
+pnpm test:e2e
+```
 
 ## Atualização do banco
 
-Execute no SQL Editor do Supabase:
+Execute primeiro em homologação e depois em produção:
 
 ```text
-SQL-ATUALIZACAO-PUBLICOLOR-3.0.sql
+SQL-ATUALIZACAO-PUBLICOLOR-3.1.0.sql
 ```
 
-O mesmo SQL está registrado como migration em:
+A mesma alteração está versionada em:
 
 ```text
-supabase/migrations/20260729010000_publicolor_3_performance_and_thumbnail_views.sql
+supabase/migrations/20260730010000_observability_and_thumbnail_cache.sql
 ```
+
+## Entregas da versão 3.1.0
+
+- botão **Mover** nos cartões em celular e tablet;
+- navegação horizontal setor por setor no Kanban;
+- módulos separados para Dashboard, Kanban, Pedidos, Relatórios, Usuários e Configurações;
+- CSS responsivo consolidado;
+- testes Playwright em seis resoluções;
+- atualizações incrementais com Supabase Realtime;
+- PNG original no Drive e WebP otimizado no Kanban;
+- diagnóstico de integrações e observabilidade;
+- PWA com cópia offline somente leitura por usuário;
+- versão, commit, branch e ambiente visíveis em Configurações;
+- modelos e procedimento para produção e homologação separadas.
 
 ## Regras de interface
 
-- **Dashboard:** somente consulta e indicadores.
-- **Produção · Kanban:** movimentação e acompanhamento dos pedidos, sem criação ou importação.
-- **Pedidos:** local exclusivo para `Importar PDF` e `Novo pedido`.
-- **Configurações:** inclui sincronização permanente das miniaturas da aba Arquivos.
+- **Dashboard:** consulta e indicadores.
+- **Produção · Kanban:** acompanhamento e movimentação; sem criação ou importação.
+- **Pedidos:** local exclusivo para `Importar PDF` e `Nova ordem`.
+- **Configurações:** integrações, importação de miniaturas por ZIP, diagnóstico e versão publicada.
 
-Consulte `docs/ARQUITETURA.md` e `docs/ATUALIZACAO-3.0.md`.
+Leia antes de publicar:
 
-
-## Publicolor 3.0.3
-
-Correção da cadeia de migrations e do Supabase Preview. Consulte `CORRECAO-SUPABASE-PREVIEW.md` antes do próximo deploy.
-
-## Publicolor 3.0.5
-
-O PNG gerado de cada página importada do PDF da OS passa a ser automaticamente a miniatura oficial do pedido ou subpedido. Consulte `docs/ATUALIZACAO-3.0.5.md`.
-
-
-## Publicolor 3.0.6
-
-Importação em lote de miniaturas PNG por ZIP, com identificação pelo número da OP, envio para 04 - DOCUMENTOS e substituição segura da miniatura anterior.
-
-
-## Publicolor 3.0.7
-
-Kanban responsivo em celular e tablet com navegação lateral por setor, encaixe automático, setas de navegação e instalação do PCP na tela inicial como aplicativo. Consulte `docs/ATUALIZACAO-3.0.7.md` e `docs/RECOMENDACOES-FUTURAS.md`.
+- `COMO-ATUALIZAR-PUBLICOLOR-3.1.0.txt`
+- `docs/AMBIENTES-E-DEPLOY.md`
+- `docs/ARQUITETURA-3.1.md`
+- `docs/RELATORIO-IMPLEMENTACAO-3.1.0.md`
