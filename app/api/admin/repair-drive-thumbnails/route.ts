@@ -5,7 +5,11 @@ import {
   requireAppUser,
   responseMessage,
 } from "@/lib/server/supabase-server";
-import { buildDriveThumbnailPath } from "@/lib/order-thumbnail";
+import {
+  buildDriveThumbnailPath,
+  isPdfImportedPageThumbnail,
+  isPngThumbnailCandidate,
+} from "@/lib/order-thumbnail";
 
 const PAGE_SIZE = 1000;
 const UPDATE_BATCH_SIZE = 25;
@@ -54,9 +58,7 @@ function normalizedText(value: string | null | undefined) {
 }
 
 function isPng(file: OrderFileRow) {
-  const mime = normalizedText(file.file_type);
-  const name = normalizedText(file.file_name);
-  return mime === "image/png" || name.endsWith(".png");
+  return isPngThumbnailCandidate(file);
 }
 
 function fileTimestamp(file: OrderFileRow) {
@@ -73,12 +75,15 @@ function chooseThumbnail(files: OrderFileRow[]) {
   const pngFiles = files.filter((file) => Boolean(file.drive_file_id) && isPng(file));
   if (pngFiles.length === 0) return null;
 
-  // A pasta 04 - DOCUMENTOS é registrada no sistema como categoria "document".
-  // Caso haja mais de um PNG, usa o modificado mais recentemente.
+  // Regra principal: o PNG criado a partir da página importada do PDF da OS
+  // é sempre a miniatura oficial do pedido ou subpedido.
+  const importedPdfPages = pngFiles.filter(isPdfImportedPageThumbnail);
+  if (importedPdfPages.length > 0) return newest(importedPdfPages);
+
+  // Compatibilidade para arquivos antigos da pasta 04 - DOCUMENTOS.
   const documentPngs = pngFiles.filter((file) => normalizedText(file.file_category) === "document");
   if (documentPngs.length > 0) return newest(documentPngs);
 
-  // Compatibilidade com registros migrados que perderam a categoria.
   const explicitlyMarked = pngFiles.filter((file) => {
     const notes = normalizedText(file.notes);
     const name = normalizedText(file.file_name);

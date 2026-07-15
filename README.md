@@ -55,3 +55,7 @@ Consulte `docs/ARQUITETURA.md` e `docs/ATUALIZACAO-3.0.md`.
 ## Publicolor 3.0.3
 
 Correção da cadeia de migrations e do Supabase Preview. Consulte `CORRECAO-SUPABASE-PREVIEW.md` antes do próximo deploy.
+
+## Publicolor 3.0.5
+
+O PNG gerado de cada página importada do PDF da OS passa a ser automaticamente a miniatura oficial do pedido ou subpedido. Consulte `docs/ATUALIZACAO-3.0.5.md`.

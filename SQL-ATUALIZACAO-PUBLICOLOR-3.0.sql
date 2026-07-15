@@ -66,8 +66,9 @@ create index if not exists order_files_thumbnail_sync_idx
     );
 
 -- Uma linha por pedido com o melhor PNG disponível para miniatura.
--- Prioridade: categoria Documento, arquivo marcado como miniatura/capa/página e, por fim,
--- o PNG modificado mais recentemente.
+-- Prioridade absoluta: PNG da página da OS gerada pelo importador de PDF.
+-- Depois: outros documentos, arquivos marcados como miniatura/capa/página e o
+-- PNG alterado mais recentemente.
 create or replace view public.order_thumbnail_candidates
 with (security_invoker = true)
 as
@@ -92,16 +93,52 @@ where files.removed_from_order_at is null
 order by
   files.order_id,
   case
-    when files.file_category = 'document' then 0
+    when lower(coalesce(files.notes, '')) like '%importada em pdf%usada como miniatura%' then 0
+    when files.file_category = 'document'
+      and lower(coalesce(files.file_name, '')) ~ '(^|[-_ ])p(a|á)gina[-_ ]?[0-9]+\.png$' then 0
+    when files.file_category = 'document' then 1
     when lower(coalesce(files.file_name, '') || ' ' || coalesce(files.notes, ''))
-      ~ '(miniatura|thumbnail|pagina|página|capa|principal|preview)' then 1
-    else 2
+      ~ '(miniatura|thumbnail|pagina|página|capa|principal|preview)' then 2
+    else 3
   end,
   coalesce(files.drive_modified_at, files.created_at) desc,
   files.created_at desc;
 
 revoke all on public.order_thumbnail_candidates from anon, authenticated;
 grant select on public.order_thumbnail_candidates to service_role;
+
+-- Corrige imediatamente pedidos e subpedidos já migrados. O PNG da página
+-- importada do PDF passa a ser a miniatura oficial mesmo que outro caminho tenha
+-- sido gravado anteriormente.
+with imported_pdf_pages as (
+  select distinct on (files.order_id)
+    files.order_id,
+    files.drive_file_id
+  from public.order_files as files
+  where files.removed_from_order_at is null
+    and files.drive_file_id is not null
+    and btrim(files.drive_file_id) <> ''
+    and (
+      lower(coalesce(files.file_type, '')) = 'image/png'
+      or lower(files.file_name) like '%.png'
+    )
+    and (
+      lower(coalesce(files.notes, '')) like '%importada em pdf%usada como miniatura%'
+      or (
+        files.file_category = 'document'
+        and lower(coalesce(files.file_name, '')) ~ '(^|[-_ ])p(a|á)gina[-_ ]?[0-9]+\.png$'
+      )
+    )
+  order by
+    files.order_id,
+    coalesce(files.drive_modified_at, files.created_at) desc,
+    files.created_at desc
+)
+update public.orders as orders
+set main_image_path = 'gdrive-pdf:' || imported_pdf_pages.drive_file_id
+from imported_pdf_pages
+where orders.id = imported_pdf_pages.order_id
+  and orders.main_image_path is distinct from 'gdrive-pdf:' || imported_pdf_pages.drive_file_id;
 
 -- Evita transferir todos os comentários ao navegador apenas para contar por pedido.
 create or replace view public.order_comment_counts
@@ -116,7 +153,7 @@ group by comments.order_id;
 grant select on public.order_comment_counts to authenticated, service_role;
 
 comment on view public.order_thumbnail_candidates is
-  'Melhor PNG visível da aba Arquivos para cada pedido ou subpedido.';
+  'Miniatura oficial por pedido: prioriza a página PNG importada do PDF da OS.';
 
 comment on view public.order_comment_counts is
   'Contagem agregada de comentários por pedido para Dashboard, Kanban e Pedidos.';

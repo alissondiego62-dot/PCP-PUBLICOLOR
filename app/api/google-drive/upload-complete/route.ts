@@ -10,6 +10,10 @@ import {
   requireAppUser,
   responseMessage,
 } from "@/lib/server/supabase-server";
+import {
+  buildDriveThumbnailPath,
+  isPdfImportedPageThumbnail,
+} from "@/lib/order-thumbnail";
 
 const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -133,8 +137,41 @@ export async function POST(request: Request) {
       throw new Error(`Arquivo enviado, mas não foi possível vinculá-lo ao pedido: ${recordError.message}.${migrationHint}`);
     }
 
+    let thumbnailUpdated = false;
+    let thumbnailWarning: string | null = null;
+
+    // O PNG criado pelo importador de PDF é a miniatura oficial da OS. A
+    // atualização é feita no servidor com a chave administrativa, evitando que
+    // uma política RLS ou uma perda de conexão no navegador deixe o arquivo
+    // visível na aba Arquivos, mas sem imagem no Dashboard/Kanban.
+    if (record?.drive_file_id && isPdfImportedPageThumbnail(record)) {
+      const thumbnailPath = buildDriveThumbnailPath(record.drive_file_id);
+      const { error: thumbnailError } = await admin
+        .from("orders")
+        .update({ main_image_path: thumbnailPath })
+        .eq("id", pending.order_id);
+
+      if (thumbnailError) {
+        thumbnailWarning = `Arquivo salvo, mas a miniatura não pôde ser atualizada: ${thumbnailError.message}`;
+      } else {
+        thumbnailUpdated = true;
+        await admin.from("order_history").insert({
+          order_id: pending.order_id,
+          user_id: actor.user.id,
+          action_type: "pdf_page_thumbnail_linked",
+          description: `Miniatura definida automaticamente usando a página importada do PDF: ${record.file_name}`,
+        });
+      }
+    }
+
     await admin.from("google_drive_upload_sessions").delete().eq("id", sessionId);
-    return Response.json({ ok: true, file: record, recovered: !fileId });
+    return Response.json({
+      ok: true,
+      file: record,
+      recovered: !fileId,
+      thumbnail_updated: thumbnailUpdated,
+      thumbnail_warning: thumbnailWarning,
+    });
   } catch (error) {
     return responseMessage(error);
   }
