@@ -18,6 +18,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",
     "drizzle-orm": "0.45.2",
+    "googleapis": "^173.0.0",
     "next": "16.2.6",
     "nitro": "3.0.260610-beta",
     "react": "19.2.6",
