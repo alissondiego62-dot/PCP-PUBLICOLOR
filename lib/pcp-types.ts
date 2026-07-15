@@ -144,5 +144,5 @@ export type CreateUserResponse = { ok?: boolean; message?: string; error?: strin
 export type DetailTab = "summary" | "production" | "materials" | "files" | "checklist" | "installation" | "history" | "comments";
 export type DeadlineFilter = "all" | "late" | "today" | "next7";
 export type SortMode = "newest" | "oldest" | "delivery";
-export type ViewKey = "dashboard" | "kanban" | "orders" | "completed" | "installation" | "activities" | "clients" | "reports" | "users" | "settings";
+export type ViewKey = "dashboard" | "kanban" | "orders" | "completed" | "installation" | "activities" | "clients" | "users" | "settings";
 export type AuthMode = "login" | "forgot" | "update";

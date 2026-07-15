@@ -1,8 +1,9 @@
-const SHELL_CACHE = "publicolor-pcp-shell-v3.1.5";
-const RUNTIME_CACHE = "publicolor-pcp-runtime-v3.1.5";
+const SHELL_CACHE = "publicolor-pcp-shell-v3.2.0";
+const RUNTIME_CACHE = "publicolor-pcp-runtime-v3.2.0";
 const THUMBNAIL_CACHE_PREFIX = "publicolor-order-thumbnails-v2";
 const STATIC_ASSETS = [
   "/",
+  "/dashboard",
   "/manifest.webmanifest",
   "/publicolor-logo.png",
   "/icons/publicolor-192.png",

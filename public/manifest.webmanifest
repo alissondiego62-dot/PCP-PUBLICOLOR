@@ -2,7 +2,7 @@
   "name": "Publicolor PCP",
   "short_name": "Publicolor",
   "description": "PCP da Publicolor com Kanban móvel, agenda, pedidos e leitura offline controlada.",
-  "start_url": "/?source=pwa",
+  "start_url": "/dashboard?source=pwa",
   "scope": "/",
   "display": "standalone",
   "display_override": [
@@ -37,5 +37,5 @@
       "purpose": "maskable"
     }
   ],
-  "id": "/"
+  "id": "/dashboard"
 }

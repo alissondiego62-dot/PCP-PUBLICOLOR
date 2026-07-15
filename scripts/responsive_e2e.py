@@ -141,6 +141,17 @@ def test_agenda_and_settings(page: Page, name: str) -> None:
     assert_no_document_overflow(page, f"{name}/settings")
 
 
+
+def test_route_persistence(page: Page, name: str) -> None:
+    assert navigate(page, re.compile("Atividades e Compras", re.I)), f"{name}: menu Atividades e Compras não encontrado."
+    page.locator(".activities-view").wait_for(state="visible", timeout=12_000)
+    assert page.url.endswith("/atividades-compras"), f"{name}: URL não foi atualizada para a página de atividades: {page.url}"
+    page.reload(wait_until="domcontentloaded")
+    page.locator(".activities-view").wait_for(state="visible", timeout=20_000)
+    assert page.url.endswith("/atividades-compras"), f"{name}: atualização voltou para outra página: {page.url}"
+    open_kanban(page)
+    assert page.url.endswith("/producao"), f"{name}: URL do Kanban não foi preservada: {page.url}"
+
 def test_order_opening(page: Page, name: str) -> None:
     order = page.locator(".order").first
     if not order.count():
@@ -181,6 +192,7 @@ def main() -> int:
                     if width <= 1100:
                         test_mobile_kanban(page, name)
                     test_order_opening(page, name)
+                    test_route_persistence(page, name)
                     test_agenda_and_settings(page, name)
                     page.screenshot(path=str(ARTIFACTS / f"{name}.png"), full_page=True)
                     print(f"OK {name} ({width}x{height})")

@@ -49,7 +49,32 @@ export const menuItems: Array<{
   { key: "orders", icon: "▤", label: "Pedidos" },
   { key: "completed", icon: "✓", label: "Concluídos" },
   { key: "installation", icon: "◷", label: "Agenda de instalação/entrega" },
-  { key: "activities", icon: "☑", label: "Atividades" },
+  { key: "activities", icon: "☑", label: "Atividades e Compras" },
   { key: "clients", icon: "◉", label: "Clientes" },
-  { key: "reports", icon: "▥", label: "Relatórios" },
 ];
+
+
+export const viewPath: Record<ViewKey, string> = {
+  dashboard: "/dashboard",
+  kanban: "/producao",
+  orders: "/pedidos",
+  completed: "/concluidos",
+  installation: "/agenda",
+  activities: "/atividades-compras",
+  clients: "/clientes",
+  users: "/usuarios",
+  settings: "/configuracoes",
+};
+
+const pathnameView = new Map<string, ViewKey>(
+  Object.entries(viewPath).map(([view, pathname]) => [pathname, view as ViewKey]),
+);
+
+export function viewFromPathname(pathname: string | null | undefined): ViewKey {
+  const normalized = String(pathname || "/").replace(/\/+$/, "") || "/";
+  return pathnameView.get(normalized) || "dashboard";
+}
+
+export function pathForView(view: ViewKey) {
+  return viewPath[view] || viewPath.dashboard;
+}

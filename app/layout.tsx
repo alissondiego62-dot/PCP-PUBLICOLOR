@@ -19,6 +19,7 @@ import "@/features/kanban/kanban-actions.css";
 import "@/features/settings/settings-enhancements.css";
 import "./responsive.css";
 import "@/features/kanban/kanban-indicators.css";
+import "@/features/dashboard/dashboard-3-2.css";
 import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 
 export const viewport: Viewport = {

@@ -10,7 +10,7 @@ import { OrderDriveUpload } from "@/components/OrderDriveUpload";
 import { OrderBatchForm, type OrderBatchSubmission } from "@/components/OrderBatchForm";
 import { PdfOrderImporter } from "@/components/PdfOrderImporter";
 import { ActivitiesView } from "@/components/ActivitiesView";
-import { isPcpSectorName, menuItems, priorityLabel, roleLabel, statusDotClass, statusesForSector, statusToDb } from "@/lib/pcp-config";
+import { isPcpSectorName, menuItems, pathForView, priorityLabel, roleLabel, statusDotClass, statusesForSector, statusToDb, viewFromPathname } from "@/lib/pcp-config";
 import {
   dateTimeLabel,
   dueLabel,
@@ -52,7 +52,6 @@ import { driveAuthenticatedJson, uploadFileToOrderDrive, type DriveConnectionSta
 import { requiresAutomaticOrderNumber } from "@/lib/order-number";
 import { buildDriveThumbnailPath, driveThumbnailFileId } from "@/lib/order-thumbnail";
 import { DashboardView } from "@/features/dashboard/DashboardView";
-import { ReportsView } from "@/features/reports/ReportsView";
 import { UsersView } from "@/features/users/UsersView";
 import { SettingsView } from "@/features/settings/SettingsView";
 import { MoveOrderModal } from "@/features/kanban/MoveOrderModal";
@@ -369,6 +368,16 @@ export default function Home() {
   }, [sidebarCollapsed]);
 
   useEffect(() => {
+    const syncViewFromAddress = () => {
+      const routeView = viewFromPathname(window.location.pathname);
+      setActiveView(routeView);
+    };
+    syncViewFromAddress();
+    window.addEventListener("popstate", syncViewFromAddress);
+    return () => window.removeEventListener("popstate", syncViewFromAddress);
+  }, []);
+
+  useEffect(() => {
     if (!sidebarOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -660,6 +669,23 @@ export default function Home() {
   const isAdmin = currentProfile?.role === "admin";
   const roleCanOperate = isAdmin || currentProfile?.role === "manager" || currentProfile?.role === "production";
   const canOperate = Boolean(roleCanOperate && isOnline);
+
+  useEffect(() => {
+    if (!user || !authReady) return;
+    if (window.location.pathname === "/") {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has("type") && !params.has("invite") && !params.has("drive")) {
+        window.history.replaceState({ view: "dashboard" }, "", pathForView("dashboard"));
+      }
+    }
+  }, [authReady, user]);
+
+  useEffect(() => {
+    if (!currentProfile || isAdmin || (activeView !== "settings" && activeView !== "users")) return;
+    window.history.replaceState({ view: "kanban" }, "", pathForView("kanban"));
+    setActiveView("kanban");
+  }, [activeView, currentProfile, isAdmin]);
+
   const showOrderActions = canOperate && activeView === "orders";
   const canUploadFiles = Boolean(currentProfile?.active && isOnline);
   const storeOrderThumbnailUrl = useCallback((orderId: string, path: string, url: string) => {
@@ -1044,9 +1070,8 @@ export default function Home() {
     orders: { eyebrow: "OPERAÇÃO", title: "Todos os pedidos", description: "Consulte e abra os pedidos ativos da produção." },
     completed: { eyebrow: "ARQUIVO", title: "Pedidos concluídos", description: "Histórico dos trabalhos que já finalizaram o fluxo." },
     installation: { eyebrow: "AGENDA DE CAMPO", title: "Agenda de instalação e entrega", description: "Consulte o mês, selecione um dia e veja todos os pedidos programados." },
-    activities: { eyebrow: "ORGANIZAÇÃO DA EQUIPE", title: "Atividades", description: "Organize grupos, atividades principais e subatividades em um único lugar." },
+    activities: { eyebrow: "ATIVIDADES E COMPRAS", title: "Atividades e Compras", description: "Organize tarefas, materiais, cotações e compras vinculadas às ordens de serviço." },
     clients: { eyebrow: "RELACIONAMENTO", title: "Clientes", description: "Visão consolidada dos clientes e seus pedidos." },
-    reports: { eyebrow: "INDICADORES", title: "Relatórios", description: "Resumo operacional atualizado diretamente do Kanban." },
     users: { eyebrow: "ADMINISTRAÇÃO", title: "Usuários e permissões", description: "Defina quem administra, opera ou apenas visualiza o sistema." },
     settings: { eyebrow: "ADMINISTRAÇÃO", title: "Configurações", description: "Conta, conexão, importação e exportação de dados." },
   };
@@ -1080,8 +1105,11 @@ export default function Home() {
 
   function navigateTo(view: ViewKey) {
     if ((view === "settings" || view === "users") && !isAdmin) return;
+    const nextPath = pathForView(view);
+    if (window.location.pathname !== nextPath) window.history.pushState({ view }, "", nextPath);
     setActiveView(view);
     setSidebarOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function cycleSortMode() {
@@ -2478,7 +2506,10 @@ export default function Home() {
         installationOrders={installationOrders}
         sectorReport={sectorReport}
         largestSectorCount={largestSectorCount}
+        currentUserId={user.id}
+        isOnline={isOnline}
         onNavigate={navigateTo}
+        onApplyKanbanMetric={applyKanbanMetricFilter}
         onOpenOrder={openOrder}
       />}
 
@@ -2579,7 +2610,7 @@ export default function Home() {
         onSchedule={(event, order) => void scheduleInstallation(event, order)}
       />}
 
-      {activeView === "activities" && <ActivitiesView profiles={profiles} currentUserId={user.id} canOperate={canOperate} />}
+      {activeView === "activities" && <ActivitiesView profiles={profiles} orders={orders} currentUserId={user.id} canOperate={canOperate} onOpenOrder={openOrder} />}
 
       {activeView === "clients" && <ClientsView
         clients={clients}
@@ -2588,12 +2619,6 @@ export default function Home() {
         onOpenOrder={openOrder}
         onNewClient={() => openCreateClient()}
         onEditClient={openEditClient}
-      />}
-
-      {activeView === "reports" && <ReportsView
-        activeOrders={activeOrders}
-        sectorReport={sectorReport}
-        largestSectorCount={largestSectorCount}
       />}
 
       {activeView === "users" && isAdmin && <UsersView

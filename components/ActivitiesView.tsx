@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent, type ReactNode, type SetStateAction } from "react";
-import type { Profile, PurchaseActivityStatus } from "@/lib/pcp-types";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent, type ReactNode, type SetStateAction } from "react";
+import type { DetailTab, Order, Profile, PurchaseActivityStatus } from "@/lib/pcp-types";
 import { supabase } from "@/lib/supabase";
 
 type ActivityPriority = "low" | "normal" | "high" | "urgent";
@@ -74,7 +74,8 @@ type PricingDraft = {
 };
 
 type PricingSaveStatus = "idle" | "saving" | "saved" | "error";
-type ActivityIconName = "add" | "copy" | "edit" | "delete" | "lock" | "check" | "info";
+type ActivityIconName = "add" | "copy" | "edit" | "delete" | "lock" | "check" | "info" | "view";
+type ActivityViewMode = "active" | "purchases" | "completed";
 
 const priorityLabel: Record<ActivityPriority, string> = {
   low: "Baixa",
@@ -196,24 +197,32 @@ function ActivityIcon({ name }: { name: ActivityIconName }) {
     lock: <><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
     check: <path d="m5 12 4 4L19 6" />,
     info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7h.01" /></>,
+    view: <><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /></>,
   };
   return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{paths[name]}</svg>;
 }
 
 export function ActivitiesView({
   profiles,
+  orders,
   currentUserId,
   canOperate,
+  onOpenOrder,
 }: {
   profiles: Profile[];
+  orders: Order[];
   currentUserId: string;
   canOperate: boolean;
+  onOpenOrder: (order: Order, tab: DetailTab) => void;
 }) {
   const [groups, setGroups] = useState<ActivityGroup[]>([]);
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [purchaseMaterials, setPurchaseMaterials] = useState<Map<string, PurchaseMaterial>>(new Map());
   const [pricingDrafts, setPricingDrafts] = useState<Record<string, PricingDraft>>({});
   const [pricingSaveState, setPricingSaveState] = useState<Record<string, PricingSaveStatus>>({});
+  const [materialNameDrafts, setMaterialNameDrafts] = useState<Record<string, string>>({});
+  const [materialNameSaveState, setMaterialNameSaveState] = useState<Record<string, PricingSaveStatus>>({});
+  const [viewMode, setViewMode] = useState<ActivityViewMode>("active");
   const [copiedId, setCopiedId] = useState("");
   const [continuousAddCount, setContinuousAddCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -228,8 +237,11 @@ export function ActivitiesView({
   const [taskEditor, setTaskEditor] = useState<TaskEditorState | null>(null);
   const [statusCascade, setStatusCascade] = useState<StatusCascadeState | null>(null);
   const pricingDraftsRef = useRef<Record<string, PricingDraft>>({});
+  const materialNameDraftsRef = useRef<Record<string, string>>({});
   const pricingTimersRef = useRef<Map<string, number>>(new Map());
+  const materialNameTimersRef = useRef<Map<string, number>>(new Map());
   const pricingVersionsRef = useRef<Map<string, number>>(new Map());
+  const materialNameVersionsRef = useRef<Map<string, number>>(new Map());
   const pricingInputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
   const taskFormRef = useRef<HTMLFormElement>(null);
   const taskTitleRef = useRef<HTMLInputElement>(null);
@@ -242,6 +254,7 @@ export function ActivitiesView({
   );
 
   const profileById = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
+  const orderById = useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders]);
 
   async function loadActivities(silent = false) {
     if (!silent) setLoading(true);
@@ -279,6 +292,14 @@ export function ActivitiesView({
     setGroups((groupRows || []) as ActivityGroup[]);
     setItems(nextItems);
     setPurchaseMaterials(materialMap);
+    setMaterialNameDrafts((current) => {
+      const next = { ...current };
+      for (const material of materialMap.values()) {
+        if (!materialNameTimersRef.current.has(material.id)) next[material.id] = material.material_name;
+      }
+      materialNameDraftsRef.current = next;
+      return next;
+    });
     setPricingDrafts((current) => {
       const next = { ...current };
       for (const material of materialMap.values()) {
@@ -321,6 +342,7 @@ export function ActivitiesView({
 
   useEffect(() => () => {
     for (const timer of pricingTimersRef.current.values()) window.clearTimeout(timer);
+    for (const timer of materialNameTimersRef.current.values()) window.clearTimeout(timer);
     if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
   }, []);
 
@@ -337,13 +359,22 @@ export function ActivitiesView({
 
   const normalizedSearch = normalizeSearch(search);
 
+  const itemMatchesViewMode = useCallback((item: ActivityItem) => {
+    if (viewMode === "purchases") return (item.activity_type === "purchase_order" || item.activity_type === "material_purchase") && !item.completed;
+    if (viewMode === "completed") return item.completed;
+    return !item.completed;
+  }, [viewMode]);
+
   const filteredGroups = useMemo(() => {
-    if (!normalizedSearch) return groups;
     return groups.filter((group) => {
+      const groupItems = items.filter((item) => item.group_id === group.id);
+      const modeMatch = groupItems.some((item) => itemMatchesViewMode(item) || (item.parent_id === null && groupItems.some((child) => child.parent_id === item.id && itemMatchesViewMode(child))));
+      if (!modeMatch) return false;
+      if (!normalizedSearch) return true;
       if (`${group.name} ${group.description || ""}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch)) return true;
-      return items.some((item) => item.group_id === group.id && `${item.title} ${item.description || ""} ${activityStatusLabel[item.activity_status]}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch));
+      return groupItems.some((item) => `${item.title} ${item.description || ""} ${activityStatusLabel[item.activity_status]}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch));
     });
-  }, [groups, items, normalizedSearch]);
+  }, [groups, itemMatchesViewMode, items, normalizedSearch]);
 
   function toggleSet(setter: Dispatch<SetStateAction<Set<string>>>, id: string) {
     setter((current) => {
@@ -638,6 +669,69 @@ export function ActivitiesView({
     return persistPurchasePricing(material, getPricingDraft(material), announceError);
   }
 
+  async function persistMaterialName(item: ActivityItem, material: PurchaseMaterial, announceError = false) {
+    if (!canOperate) return false;
+    const timer = materialNameTimersRef.current.get(material.id);
+    if (timer !== undefined) window.clearTimeout(timer);
+    materialNameTimersRef.current.delete(material.id);
+
+    const nextName = String(materialNameDraftsRef.current[material.id] ?? material.material_name).trim();
+    if (!nextName) {
+      setMaterialNameSaveState((current) => ({ ...current, [material.id]: "error" }));
+      if (announceError) setError("O nome do material não pode ficar vazio.");
+      return false;
+    }
+    if (nextName === material.material_name && nextName === item.title) {
+      setMaterialNameSaveState((current) => ({ ...current, [material.id]: "saved" }));
+      return true;
+    }
+
+    const version = (materialNameVersionsRef.current.get(material.id) || 0) + 1;
+    materialNameVersionsRef.current.set(material.id, version);
+    setMaterialNameSaveState((current) => ({ ...current, [material.id]: "saving" }));
+    let { error: updateError } = await supabase.rpc("rename_linked_order_material", {
+      p_activity_id: item.id,
+      p_material_name: nextName,
+    });
+    if (updateError && ["42883", "PGRST202"].includes(updateError.code || "")) {
+      const fallbackResult = await supabase
+        .from("order_materials")
+        .update({ material_name: nextName })
+        .eq("id", material.id);
+      updateError = fallbackResult.error;
+    }
+
+    if (materialNameVersionsRef.current.get(material.id) !== version) return !updateError;
+    if (updateError) {
+      setMaterialNameSaveState((current) => ({ ...current, [material.id]: "error" }));
+      setError(`Não foi possível renomear ${material.material_name}: ${updateError.message}`);
+      return false;
+    }
+
+    setPurchaseMaterials((current) => {
+      const next = new Map(current);
+      next.set(material.id, { ...material, material_name: nextName });
+      return next;
+    });
+    setItems((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, title: nextName } : candidate));
+    setMaterialNameSaveState((current) => ({ ...current, [material.id]: "saved" }));
+    setNotice("Nome atualizado na atividade e nos materiais da OS.");
+    return true;
+  }
+
+  function updateMaterialNameDraft(item: ActivityItem, material: PurchaseMaterial, value: string) {
+    const nextDrafts = { ...materialNameDraftsRef.current, [material.id]: value };
+    materialNameDraftsRef.current = nextDrafts;
+    setMaterialNameDrafts(nextDrafts);
+    setMaterialNameSaveState((current) => ({ ...current, [material.id]: "idle" }));
+    materialNameVersionsRef.current.set(material.id, (materialNameVersionsRef.current.get(material.id) || 0) + 1);
+    const previousTimer = materialNameTimersRef.current.get(material.id);
+    if (previousTimer !== undefined) window.clearTimeout(previousTimer);
+    materialNameTimersRef.current.set(material.id, window.setTimeout(() => {
+      void persistMaterialName(item, material);
+    }, 850));
+  }
+
   function focusPricingInput(materialId: string, field: keyof PricingDraft) {
     window.requestAnimationFrame(() => {
       const input = pricingInputRefs.current.get(`${materialId}:${field}`);
@@ -778,11 +872,15 @@ export function ActivitiesView({
 
   function renderTask(item: ActivityItem, childItems: ActivityItem[], showCompleted: boolean, isSubtask = false) {
     const assigned = item.assigned_to ? profileById.get(item.assigned_to) : null;
-    const visibleChildren = childItems.filter((child) => (showCompleted || !child.completed) && (taskMatchesSearch(child) || taskMatchesSearch(item)));
+    const visibleChildren = childItems.filter((child) => {
+      const modeVisible = viewMode === "completed" ? child.completed : viewMode === "purchases" ? !child.completed : (showCompleted || !child.completed);
+      return modeVisible && (taskMatchesSearch(child) || taskMatchesSearch(item));
+    });
     const completedChildren = childItems.filter((child) => child.completed).length;
     const state = dueState(item.due_date, item.due_at, item.completed);
     const isChildrenCollapsed = collapsedTasks.has(item.id);
     const material = item.order_material_id ? purchaseMaterials.get(item.order_material_id) : null;
+    const linkedOrder = item.order_id ? orderById.get(item.order_id) : null;
     const draft = material ? pricingDrafts[material.id] || getPricingDraft(material) : null;
     const draftQuantity = draft ? parseDecimal(draft.quantity) : Number.NaN;
     const draftUnitPrice = draft?.unitPrice.trim() ? parseDecimal(draft.unitPrice) : Number.NaN;
@@ -803,6 +901,7 @@ export function ActivitiesView({
     }, { total: 0, priced: 0, missing: 0 });
     const hasOpenChildren = childItems.some((child) => !child.completed);
     const saveStatus = material ? pricingSaveState[material.id] || "idle" : "idle";
+    const nameSaveStatus = material ? materialNameSaveState[material.id] || "idle" : "idle";
     const saveStatusLabel: Record<PricingSaveStatus, string> = {
       idle: "Salvamento automático ativo",
       saving: "Salvando valores",
@@ -833,7 +932,24 @@ export function ActivitiesView({
                 aria-label={isChildrenCollapsed ? "Expandir subatividades" : "Recolher subatividades"}
                 title={isChildrenCollapsed ? "Expandir subatividades" : "Recolher subatividades"}
               >{isChildrenCollapsed ? "›" : "⌄"}</button>}
-              <b title={item.title}>{item.title}</b>
+              {item.activity_type === "material_purchase" && material ? <label className="activity-material-name-editor" title="Edite o nome; a alteração também será aplicada aos materiais da OS">
+                <input
+                  aria-label={`Nome do material ${material.material_name}`}
+                  value={materialNameDrafts[material.id] ?? material.material_name}
+                  onChange={(event) => updateMaterialNameDraft(item, material, event.target.value)}
+                  onBlur={() => void persistMaterialName(item, material, true)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    void persistMaterialName(item, material, true);
+                    event.currentTarget.blur();
+                  }}
+                  disabled={!canOperate}
+                />
+                <span className={`activity-name-save-state is-${nameSaveStatus}`} aria-live="polite" title={saveStatusLabel[nameSaveStatus]}>
+                  {nameSaveStatus === "saving" ? "…" : nameSaveStatus === "saved" ? "✓" : nameSaveStatus === "error" ? "!" : ""}
+                </span>
+              </label> : <b title={item.title}>{item.title}</b>}
               {!isSubtask && childItems.length > 0 && <span className="activity-subtask-progress">{completedChildren}/{childItems.length}</span>}
             </div>
 
@@ -918,6 +1034,8 @@ export function ActivitiesView({
             </select>
           </label>}
 
+          {linkedOrder && <button type="button" className="activity-icon-button" onClick={() => onOpenOrder(linkedOrder, item.activity_type === "material_purchase" ? "materials" : "summary")} title={`Visualizar OP ${linkedOrder.op_number}`} aria-label={`Visualizar OP ${linkedOrder.op_number}`}><ActivityIcon name="view" /></button>}
+
           {!isSubtask && item.activity_type === "purchase_order" && childItems.length > 0 && <button type="button" className="activity-icon-button" onClick={() => void copyPurchaseList(item, childItems)} title="Copiar todos os produtos e quantidades" aria-label="Copiar todos os produtos e quantidades">
             <ActivityIcon name={copiedId === item.id ? "check" : "copy"} />
           </button>}
@@ -948,6 +1066,12 @@ export function ActivitiesView({
       <article><small>CONCLUÍDAS</small><strong>{totals.completed}</strong><span>Ocultas por padrão</span></article>
     </div>
 
+    <div className="activities-mode-tabs" role="tablist" aria-label="Visualização de atividades">
+      <button type="button" role="tab" aria-selected={viewMode === "active"} className={viewMode === "active" ? "active" : ""} onClick={() => setViewMode("active")}><span>Atividades</span><b>{totals.pending}</b></button>
+      <button type="button" role="tab" aria-selected={viewMode === "purchases"} className={viewMode === "purchases" ? "active" : ""} onClick={() => setViewMode("purchases")}><span>Compras</span><b>{items.filter((item) => !item.completed && (item.activity_type === "purchase_order" || item.activity_type === "material_purchase")).length}</b></button>
+      <button type="button" role="tab" aria-selected={viewMode === "completed"} className={viewMode === "completed" ? "active" : ""} onClick={() => setViewMode("completed")}><span>Finalizadas</span><b>{totals.completed}</b></button>
+    </div>
+
     <div className="activities-toolbar">
       <label className="activities-search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar grupo, atividade, material ou descrição..." /></label>
       <div>
@@ -966,17 +1090,26 @@ export function ActivitiesView({
       {!groups.length && canOperate && <button type="button" className="primary" onClick={() => setGroupEditor({ mode: "create", group: null })}>Criar primeiro grupo</button>}
     </div> : <div className="activity-groups">
       {filteredGroups.map((group) => {
-        const groupItems = items.filter((item) => item.group_id === group.id);
+        const allGroupItems = items.filter((item) => item.group_id === group.id);
+        const groupItems = viewMode === "purchases"
+          ? allGroupItems.filter((item) => item.activity_type === "purchase_order" || item.activity_type === "material_purchase")
+          : allGroupItems;
         const mainItems = groupItems.filter((item) => !item.parent_id);
         const completedCount = groupItems.filter((item) => item.completed).length;
         const pendingCount = groupItems.length - completedCount;
-        const showCompleted = showCompletedGroups.has(group.id);
+        const showCompleted = viewMode === "completed" || showCompletedGroups.has(group.id);
         const isCollapsed = collapsedGroups.has(group.id);
         const visibleMainItems = mainItems.filter((item) => {
           const children = groupItems.filter((child) => child.parent_id === item.id);
           const searchMatch = taskMatchesSearch(item) || children.some(taskMatchesSearch);
           const hasOpenChildren = children.some((child) => !child.completed);
-          return searchMatch && (showCompleted || !item.completed || hasOpenChildren);
+          const hasCompletedChildren = children.some((child) => child.completed);
+          const modeVisible = viewMode === "completed"
+            ? item.completed || hasCompletedChildren
+            : viewMode === "purchases"
+              ? (!item.completed || hasOpenChildren)
+              : (showCompleted || !item.completed || hasOpenChildren);
+          return searchMatch && modeVisible;
         });
         const progress = groupItems.length ? Math.round((completedCount / groupItems.length) * 100) : 0;
 
@@ -1000,7 +1133,7 @@ export function ActivitiesView({
               const children = groupItems.filter((child) => child.parent_id === item.id);
               return renderTask(item, children, showCompleted);
             })}
-            {completedCount > 0 && <button type="button" className="activity-show-completed" onClick={() => toggleSet(setShowCompletedGroups, group.id)}>{showCompleted ? "Ocultar concluídas" : `Mostrar concluídas (${completedCount})`}</button>}
+            {viewMode === "active" && completedCount > 0 && <button type="button" className="activity-show-completed" onClick={() => toggleSet(setShowCompletedGroups, group.id)}>{showCompleted ? "Ocultar concluídas" : `Mostrar concluídas (${completedCount})`}</button>}
           </div>}
         </article>;
       })}
