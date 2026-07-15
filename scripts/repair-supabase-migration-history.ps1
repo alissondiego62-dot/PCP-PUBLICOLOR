@@ -1,4 +1,4 @@
-# Publicolor 3.0.2 — alternativa oficial via Supabase CLI
+# Publicolor 3.0.3 — alternativa oficial via Supabase CLI
 # Requer: supabase login e acesso ao projeto Publicolor PCP.
 
 $ErrorActionPreference = "Stop"

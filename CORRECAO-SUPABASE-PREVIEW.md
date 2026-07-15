@@ -1,4 +1,4 @@
-# Correção do Supabase Preview — Publicolor 3.0.2
+# Correção do Supabase Preview — Publicolor 3.0.3
 
 ## Causa
 
@@ -6,6 +6,7 @@ O banco já possui o tipo `public.user_role`, mas o histórico remoto não regis
 
 ## O que foi corrigido no projeto
 
+0. O reparador do histórico usa somente as colunas comuns `version`, `statements` e `name`. Isso evita o erro `column created_by does not exist` em bancos e Preview Branches com formato antigo da tabela de migrations.
 1. `0001_initial.sql` foi substituída por `20260712190000_initial.sql`, usando timestamp válido.
 2. A migration inicial agora é transacional e repetível (`IF NOT EXISTS`, remoção controlada de triggers/policies e `ON CONFLICT`).
 3. Foram adicionados os três arquivos históricos que já constam no projeto remoto, evitando divergência entre local e remoto.

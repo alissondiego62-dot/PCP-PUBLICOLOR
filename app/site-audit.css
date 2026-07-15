@@ -321,3 +321,11 @@
     transition-duration: .01ms !important;
   }
 }
+
+/* Publicolor 3.0.4 — criação/importação exclusiva da aba Pedidos */
+.app-shell:not([data-active-view="orders"]) .header-order-actions,
+.app-shell:not([data-active-view="orders"]) .pdf-import-header-button,
+.app-shell:not([data-active-view="orders"]) .header-new-order,
+.app-shell:not([data-active-view="orders"]) .v3-hero-actions {
+  display: none !important;
+}

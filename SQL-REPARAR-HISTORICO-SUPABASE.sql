@@ -1,7 +1,8 @@
--- Publicolor 3.0.2 — reparação única do histórico de migrations do Supabase
+-- Publicolor 3.0.3 — reparação única do histórico de migrations do Supabase
 -- Execute no SQL Editor do projeto Publicolor PCP antes de reabrir a Preview Branch.
 -- Este script NÃO executa migrations antigas e NÃO altera os dados operacionais.
 -- Ele apenas registra como aplicadas as migrations cujo resultado já foi validado no schema atual.
+-- Compatível com versões da tabela schema_migrations que não possuem a coluna created_by.
 
 begin;
 
@@ -72,46 +73,46 @@ end
 $$;
 
 insert into supabase_migrations.schema_migrations
-  (version, statements, name, created_by)
+  (version, statements, name)
 values
-    ('20260712190000', array[]::text[], 'initial', 'publicolor_history_repair'),
-    ('20260712194040', array[]::text[], 'production_sectors_and_order_controls', 'publicolor_history_repair'),
-    ('20260712194210', array[]::text[], 'harden_trigger_function_privileges', 'publicolor_history_repair'),
-    ('20260712195724', array[]::text[], 'user_roles_and_installation_agenda', 'publicolor_history_repair'),
-    ('20260712195908', array[]::text[], 'harden_role_management_privileges', 'publicolor_history_repair'),
-    ('20260712200537', array[]::text[], 'optimize_role_policies_and_foreign_keys', 'publicolor_history_repair'),
-    ('20260713010000', array[]::text[], 'publicolor_v3_order_and_installation', 'publicolor_history_repair'),
-    ('20260713090000', array[]::text[], 'editable_orders_consultant_history', 'publicolor_history_repair'),
-    ('20260713100000', array[]::text[], 'official_production_sectors', 'publicolor_history_repair'),
-    ('20260713221049', array[]::text[], 'add_installation_time_confirmed_to_orders', 'publicolor_history_repair'),
-    ('20260714010000', array[]::text[], 'order_workspace_module', 'publicolor_history_repair'),
-    ('20260714213957', array[]::text[], 'client_materials_tintas', 'publicolor_history_repair'),
-    ('20260714214125', array[]::text[], 'client_materials_source_row', 'publicolor_history_repair'),
-    ('20260714223000', array[]::text[], 'client_materials_tintas', 'publicolor_history_repair'),
-    ('20260715010000', array[]::text[], 'google_drive_links', 'publicolor_history_repair'),
-    ('20260715030000', array[]::text[], 'reopen_completed_order', 'publicolor_history_repair'),
-    ('20260716010000', array[]::text[], 'clients_module', 'publicolor_history_repair'),
-    ('20260716020000', array[]::text[], 'organized_order_history', 'publicolor_history_repair'),
-    ('20260717010000', array[]::text[], 'automatic_deadline_and_month_calendar', 'publicolor_history_repair'),
-    ('20260718010000', array[]::text[], 'google_drive_oauth_integration', 'publicolor_history_repair'),
-    ('20260719010000', array[]::text[], 'drive_upload_recovery_and_file_access', 'publicolor_history_repair'),
-    ('20260720010000', array[]::text[], 'order_file_refresh_audit', 'publicolor_history_repair'),
-    ('20260721010000', array[]::text[], 'order_file_remove_delete_modes', 'publicolor_history_repair'),
-    ('20260722010000', array[]::text[], 'admin_platform_and_sql_updates', 'publicolor_history_repair'),
-    ('20260723010000', array[]::text[], 'drive_order_folder_registry_and_sync', 'publicolor_history_repair'),
-    ('20260723030000', array[]::text[], 'fix_order_files_upsert_constraint', 'publicolor_history_repair'),
-    ('20260724010000', array[]::text[], 'fix_orders_insert_rls_for_pdf_import', 'publicolor_history_repair'),
-    ('20260725010000', array[]::text[], 'fix_order_delete_cascade', 'publicolor_history_repair'),
-    ('20260726010000', array[]::text[], 'activity_management', 'publicolor_history_repair'),
-    ('20260727010000', array[]::text[], 'automatic_unique_order_number', 'publicolor_history_repair'),
-    ('20260727030000', array[]::text[], 'prevent_duplicate_order_numbers', 'publicolor_history_repair'),
-    ('20260728010000', array[]::text[], 'pdf_client_and_pcp_workflow', 'publicolor_history_repair')
+    ('20260712190000', array[]::text[], 'initial'),
+    ('20260712194040', array[]::text[], 'production_sectors_and_order_controls'),
+    ('20260712194210', array[]::text[], 'harden_trigger_function_privileges'),
+    ('20260712195724', array[]::text[], 'user_roles_and_installation_agenda'),
+    ('20260712195908', array[]::text[], 'harden_role_management_privileges'),
+    ('20260712200537', array[]::text[], 'optimize_role_policies_and_foreign_keys'),
+    ('20260713010000', array[]::text[], 'publicolor_v3_order_and_installation'),
+    ('20260713090000', array[]::text[], 'editable_orders_consultant_history'),
+    ('20260713100000', array[]::text[], 'official_production_sectors'),
+    ('20260713221049', array[]::text[], 'add_installation_time_confirmed_to_orders'),
+    ('20260714010000', array[]::text[], 'order_workspace_module'),
+    ('20260714213957', array[]::text[], 'client_materials_tintas'),
+    ('20260714214125', array[]::text[], 'client_materials_source_row'),
+    ('20260714223000', array[]::text[], 'client_materials_tintas'),
+    ('20260715010000', array[]::text[], 'google_drive_links'),
+    ('20260715030000', array[]::text[], 'reopen_completed_order'),
+    ('20260716010000', array[]::text[], 'clients_module'),
+    ('20260716020000', array[]::text[], 'organized_order_history'),
+    ('20260717010000', array[]::text[], 'automatic_deadline_and_month_calendar'),
+    ('20260718010000', array[]::text[], 'google_drive_oauth_integration'),
+    ('20260719010000', array[]::text[], 'drive_upload_recovery_and_file_access'),
+    ('20260720010000', array[]::text[], 'order_file_refresh_audit'),
+    ('20260721010000', array[]::text[], 'order_file_remove_delete_modes'),
+    ('20260722010000', array[]::text[], 'admin_platform_and_sql_updates'),
+    ('20260723010000', array[]::text[], 'drive_order_folder_registry_and_sync'),
+    ('20260723030000', array[]::text[], 'fix_order_files_upsert_constraint'),
+    ('20260724010000', array[]::text[], 'fix_orders_insert_rls_for_pdf_import'),
+    ('20260725010000', array[]::text[], 'fix_order_delete_cascade'),
+    ('20260726010000', array[]::text[], 'activity_management'),
+    ('20260727010000', array[]::text[], 'automatic_unique_order_number'),
+    ('20260727030000', array[]::text[], 'prevent_duplicate_order_numbers'),
+    ('20260728010000', array[]::text[], 'pdf_client_and_pcp_workflow')
 on conflict (version) do nothing;
 
 commit;
 
 -- Resultado esperado: todas as versões abaixo aparecem uma única vez.
-select version, name, created_by
+select version, name
 from supabase_migrations.schema_migrations
 where version in ('20260712190000','20260712194040','20260712194210','20260712195724','20260712195908','20260712200537','20260713010000','20260713090000','20260713100000','20260713221049','20260714010000','20260714213957','20260714214125','20260714223000','20260715010000','20260715030000','20260716010000','20260716020000','20260717010000','20260718010000','20260719010000','20260720010000','20260721010000','20260722010000','20260723010000','20260723030000','20260724010000','20260725010000','20260726010000','20260727010000','20260727030000','20260728010000')
 order by version;

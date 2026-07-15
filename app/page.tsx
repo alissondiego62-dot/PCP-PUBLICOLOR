@@ -579,6 +579,7 @@ export default function Home() {
   const profilesById = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
   const isAdmin = currentProfile?.role === "admin";
   const canOperate = isAdmin || currentProfile?.role === "manager" || currentProfile?.role === "production";
+  const showOrderActions = canOperate && activeView === "orders";
   const canUploadFiles = Boolean(currentProfile?.active);
   const installationSector = useMemo(() => activeSectors.find((sector) => sector.name === "INSTALAÇÃO") || null, [activeSectors]);
   const installationOrders = useMemo(() => activeOrders
@@ -1951,7 +1952,7 @@ export default function Home() {
     </form>}</section>
   </main>;
 
-  return <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+  return <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} data-active-view={activeView}>
     <aside className={`sidebar ${sidebarOpen ? "open" : ""} ${sidebarCollapsed ? "collapsed" : ""}`}>
       <div className="brand"><span className="brand-logo"><img src="/publicolor-logo.png" alt="Publicolor" /></span><div><b>Publicolor</b><small>PCP · Controle da produção</small></div><button type="button" className="sidebar-collapse-button" aria-label={sidebarCollapsed ? "Expandir menu lateral" : "Recolher menu lateral"} title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"} onClick={() => setSidebarCollapsed((value) => !value)}>{sidebarCollapsed ? "»" : "«"}</button></div>
       <nav>{menuItems.map((item) => <button type="button" key={item.key} className={activeView === item.key ? "active" : ""} onClick={() => navigateTo(item.key)}><i>{item.icon}</i><span>{item.label}</span></button>)}{isAdmin && <button type="button" className={activeView === "users" ? "active" : ""} onClick={() => navigateTo("users")}><i>♙</i><span>Usuários</span></button>}</nav>
@@ -1959,7 +1960,7 @@ export default function Home() {
     </aside>
     {sidebarOpen && <button type="button" className="sidebar-backdrop" aria-label="Fechar menu" onClick={() => setSidebarOpen(false)} />}
     <section className="content">
-      <header><div className="page-heading"><button type="button" className="mobile-menu-button" aria-label="Abrir menu" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}>☰</button><div><p className="eyebrow">{viewMeta[activeView].eyebrow}</p><h1>{viewMeta[activeView].title}</h1><p>{viewMeta[activeView].description}</p></div></div><div className="header-actions"><span className="sync-status">● Conectado</span>{currentProfile && <span className="role-badge" data-role={isAdmin ? "admin" : canOperate ? "operator" : "user"}>{roleLabel[currentProfile.role]}</span>}{canOperate && activeView === "orders" && <div className="header-order-actions"><button type="button" className="pdf-import-header-button" onClick={() => { setError(""); setPdfImporterOpen(true); }} disabled={!activeSectors.length}>⇧ Importar PDF</button><button type="button" className="primary header-new-order" onClick={() => openNewOrder()} disabled={!activeSectors.length}>＋ Novo pedido</button></div>}</div></header>
+      <header><div className="page-heading"><button type="button" className="mobile-menu-button" aria-label="Abrir menu" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}>☰</button><div><p className="eyebrow">{viewMeta[activeView].eyebrow}</p><h1>{viewMeta[activeView].title}</h1><p>{viewMeta[activeView].description}</p></div></div><div className="header-actions"><span className="sync-status">● Conectado</span>{currentProfile && <span className="role-badge" data-role={isAdmin ? "admin" : canOperate ? "operator" : "user"}>{roleLabel[currentProfile.role]}</span>}{showOrderActions && <div className="header-order-actions" aria-label="Ações exclusivas da página de pedidos"><button type="button" className="pdf-import-header-button" onClick={() => { setError(""); setPdfImporterOpen(true); }} disabled={!activeSectors.length}>⇧ Importar PDF</button><button type="button" className="primary header-new-order" onClick={() => openNewOrder()} disabled={!activeSectors.length}>＋ Nova ordem</button></div>}</div></header>
       {error && <div className="db-alert"><b>Atenção</b><span>{error}</span></div>}{notice && <div className="toast">✓ {notice}</div>}
       {activeView === "dashboard" && <section className="v3-dashboard">
         <div className="v3-hero">
