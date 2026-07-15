@@ -1,10 +1,11 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
-import type { Profile } from "@/lib/pcp-types";
+import type { Profile, PurchaseActivityStatus } from "@/lib/pcp-types";
 import { supabase } from "@/lib/supabase";
 
 type ActivityPriority = "low" | "normal" | "high" | "urgent";
+type ActivityType = "general" | "material_purchase";
 
 type ActivityGroup = {
   id: string;
@@ -23,9 +24,14 @@ type ActivityItem = {
   title: string;
   description: string | null;
   due_date: string | null;
+  due_at: string | null;
   priority: ActivityPriority;
   assigned_to: string | null;
   completed: boolean;
+  activity_status: PurchaseActivityStatus;
+  activity_type: ActivityType;
+  order_id: string | null;
+  order_material_id: string | null;
   completed_at: string | null;
   completed_by: string | null;
   position: number;
@@ -53,21 +59,74 @@ const priorityLabel: Record<ActivityPriority, string> = {
   urgent: "Urgente",
 };
 
+const activityStatusLabel: Record<PurchaseActivityStatus, string> = {
+  pending: "Pendente",
+  awaiting_quote: "Aguardando orçamento",
+  awaiting_separation: "Aguardando separação",
+  awaiting_delivery: "Aguardando entrega",
+  finalized: "Finalizada",
+};
+
+const activityStatusOptions: PurchaseActivityStatus[] = [
+  "pending",
+  "awaiting_quote",
+  "awaiting_separation",
+  "awaiting_delivery",
+  "finalized",
+];
+
 function isoToday() {
   const now = new Date();
   const offset = now.getTimezoneOffset();
   return new Date(now.getTime() - offset * 60_000).toISOString().slice(0, 10);
 }
 
-function dateLabel(value: string | null) {
+function dateLabel(value: string | null, dueAt: string | null = null) {
+  if (dueAt) {
+    const date = new Date(dueAt);
+    if (!Number.isNaN(date.getTime())) {
+      return new Intl.DateTimeFormat("pt-BR", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(date);
+    }
+  }
   if (!value) return "Sem prazo";
   const [year, month, day] = value.split("-").map(Number);
   if (!year || !month || !day) return value;
   return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(year, month - 1, day));
 }
 
-function dueState(value: string | null, completed: boolean) {
-  if (!value || completed) return "none";
+function toDueInputValue(dueAt: string | null, dueDate: string | null) {
+  if (dueAt) {
+    const date = new Date(dueAt);
+    if (!Number.isNaN(date.getTime())) {
+      const offset = date.getTimezoneOffset();
+      return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 16);
+    }
+  }
+  return dueDate ? `${dueDate}T17:00` : "";
+}
+
+function dueState(value: string | null, dueAt: string | null, completed: boolean) {
+  if (completed) return "none";
+  if (dueAt) {
+    const dueTime = new Date(dueAt).getTime();
+    if (!Number.isNaN(dueTime)) {
+      const now = Date.now();
+      const today = isoToday();
+      const localDueDate = new Date(dueAt);
+      const offset = localDueDate.getTimezoneOffset();
+      const dueDay = new Date(localDueDate.getTime() - offset * 60_000).toISOString().slice(0, 10);
+      if (dueTime < now) return "late";
+      if (dueDay === today) return "today";
+      return "future";
+    }
+  }
+  if (!value) return "none";
   const today = isoToday();
   if (value < today) return "late";
   if (value === today) return "today";
@@ -112,7 +171,7 @@ export function ActivitiesView({
 
     const [{ data: groupRows, error: groupError }, { data: itemRows, error: itemError }] = await Promise.all([
       supabase.from("activity_groups").select("id,name,description,position,created_by,created_at,updated_at").order("position").order("created_at"),
-      supabase.from("activities").select("id,group_id,parent_id,title,description,due_date,priority,assigned_to,completed,completed_at,completed_by,position,created_by,created_at,updated_at").order("position").order("created_at"),
+      supabase.from("activities").select("id,group_id,parent_id,title,description,due_date,due_at,priority,assigned_to,completed,activity_status,activity_type,order_id,order_material_id,completed_at,completed_by,position,created_by,created_at,updated_at").order("position").order("created_at"),
     ]);
 
     const loadError = groupError || itemError;
@@ -154,12 +213,11 @@ export function ActivitiesView({
 
   const totals = useMemo(() => {
     const pending = items.filter((item) => !item.completed);
-    const today = isoToday();
     return {
       groups: groups.length,
       pending: pending.length,
-      today: pending.filter((item) => item.due_date === today).length,
-      late: pending.filter((item) => item.due_date && item.due_date < today).length,
+      today: pending.filter((item) => dueState(item.due_date, item.due_at, false) === "today").length,
+      late: pending.filter((item) => dueState(item.due_date, item.due_at, false) === "late").length,
       completed: items.filter((item) => item.completed).length,
     };
   }, [groups.length, items]);
@@ -170,7 +228,7 @@ export function ActivitiesView({
     if (!normalizedSearch) return groups;
     return groups.filter((group) => {
       if (`${group.name} ${group.description || ""}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch)) return true;
-      return items.some((item) => item.group_id === group.id && `${item.title} ${item.description || ""}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch));
+      return items.some((item) => item.group_id === group.id && `${item.title} ${item.description || ""} ${activityStatusLabel[item.activity_status]}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch));
     });
   }, [groups, items, normalizedSearch]);
 
@@ -228,13 +286,19 @@ export function ActivitiesView({
     event.preventDefault();
     if (!taskEditor || !canOperate) return;
     const form = new FormData(event.currentTarget);
-    const groupId = String(form.get("group_id") || "").trim();
-    const parentId = String(form.get("parent_id") || "").trim();
-    const title = String(form.get("title") || "").trim();
+    const linkedPurchase = taskEditor.item?.activity_type === "material_purchase";
+    const groupId = linkedPurchase ? taskEditor.item!.group_id : String(form.get("group_id") || "").trim();
+    const parentId = linkedPurchase ? "" : String(form.get("parent_id") || "").trim();
+    const title = linkedPurchase ? taskEditor.item!.title : String(form.get("title") || "").trim();
     const description = String(form.get("description") || "").trim();
-    const dueDate = String(form.get("due_date") || "").trim();
+    const dueAtInput = linkedPurchase
+      ? toDueInputValue(taskEditor.item!.due_at, taskEditor.item!.due_date)
+      : String(form.get("due_at") || "").trim();
+    const dueDate = dueAtInput ? dueAtInput.slice(0, 10) : "";
+    const dueAt = dueAtInput ? new Date(dueAtInput).toISOString() : null;
     const priority = String(form.get("priority") || "normal") as ActivityPriority;
-    const assignedTo = String(form.get("assigned_to") || "").trim();
+    const activityStatus = String(form.get("activity_status") || "pending") as PurchaseActivityStatus;
+    const assignedTo = linkedPurchase ? taskEditor.item!.assigned_to || currentUserId : String(form.get("assigned_to") || "").trim();
     if (!groupId || !title) return;
 
     setBusyId("task-editor");
@@ -249,7 +313,10 @@ export function ActivitiesView({
           title,
           description: description || null,
           due_date: dueDate || null,
+          due_at: dueAt,
           priority,
+          activity_status: activityStatus,
+          completed: activityStatus === "finalized",
           assigned_to: assignedTo || null,
           updated_at: new Date().toISOString(),
         })
@@ -269,7 +336,11 @@ export function ActivitiesView({
         title,
         description: description || null,
         due_date: dueDate || null,
+        due_at: dueAt,
         priority,
+        activity_status: activityStatus,
+        activity_type: "general",
+        completed: activityStatus === "finalized",
         assigned_to: assignedTo || null,
         position: nextPosition,
         created_by: currentUserId,
@@ -298,9 +369,51 @@ export function ActivitiesView({
     if (updateError) setError(`Não foi possível atualizar a atividade: ${updateError.message}`);
     else {
       setItems((current) => current.map((currentItem) => currentItem.id === item.id
-        ? { ...currentItem, completed: nextCompleted, completed_at: nextCompleted ? new Date().toISOString() : null, completed_by: nextCompleted ? currentUserId : null }
+        ? {
+          ...currentItem,
+          completed: nextCompleted,
+          activity_status: nextCompleted ? "finalized" : "pending",
+          completed_at: nextCompleted ? new Date().toISOString() : null,
+          completed_by: nextCompleted ? currentUserId : null,
+        }
         : currentItem));
-      setNotice(nextCompleted ? "Atividade concluída e ocultada no grupo." : "Atividade reaberta.");
+      setNotice(nextCompleted
+        ? item.activity_type === "material_purchase"
+          ? "Compra finalizada. O material foi marcado como disponível na OS."
+          : "Atividade concluída e ocultada no grupo."
+        : item.activity_type === "material_purchase"
+          ? "Compra reaberta. O material voltou para não disponível na OS."
+          : "Atividade reaberta.");
+    }
+    setBusyId("");
+  }
+
+  async function updateActivityStatus(item: ActivityItem, activityStatus: PurchaseActivityStatus) {
+    if (!canOperate || busyId || item.activity_status === activityStatus) return;
+    setBusyId(item.id);
+    setError("");
+
+    const completed = activityStatus === "finalized";
+    const { error: updateError } = await supabase
+      .from("activities")
+      .update({ activity_status: activityStatus, completed, updated_at: new Date().toISOString() })
+      .eq("id", item.id);
+
+    if (updateError) {
+      setError(`Não foi possível atualizar o status: ${updateError.message}`);
+    } else {
+      setItems((current) => current.map((currentItem) => currentItem.id === item.id
+        ? {
+          ...currentItem,
+          activity_status: activityStatus,
+          completed,
+          completed_at: completed ? new Date().toISOString() : null,
+          completed_by: completed ? currentUserId : null,
+        }
+        : currentItem));
+      setNotice(completed && item.activity_type === "material_purchase"
+        ? "Compra finalizada. O material já consta como disponível na OS."
+        : `Status alterado para ${activityStatusLabel[activityStatus]}.`);
     }
     setBusyId("");
   }
@@ -318,7 +431,12 @@ export function ActivitiesView({
   }
 
   async function deleteGroup(group: ActivityGroup) {
-    if (!canOperate || !window.confirm(`Excluir o grupo “${group.name}” e todas as atividades dele?`)) return;
+    if (!canOperate) return;
+    if (items.some((item) => item.group_id === group.id && item.activity_type === "material_purchase")) {
+      setError("O grupo Compras possui atividades automáticas vinculadas a materiais de OS e não pode ser excluído.");
+      return;
+    }
+    if (!window.confirm(`Excluir o grupo “${group.name}” e todas as atividades dele?`)) return;
     setBusyId(group.id);
     const { error: deleteError } = await supabase.from("activity_groups").delete().eq("id", group.id);
     if (deleteError) setError(`Não foi possível excluir o grupo: ${deleteError.message}`);
@@ -341,14 +459,14 @@ export function ActivitiesView({
 
   function taskMatchesSearch(item: ActivityItem) {
     if (!normalizedSearch) return true;
-    return `${item.title} ${item.description || ""}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch);
+    return `${item.title} ${item.description || ""} ${activityStatusLabel[item.activity_status]}`.toLocaleLowerCase("pt-BR").includes(normalizedSearch);
   }
 
   function renderTask(item: ActivityItem, childItems: ActivityItem[], showCompleted: boolean, isSubtask = false) {
     const assigned = item.assigned_to ? profileById.get(item.assigned_to) : null;
     const visibleChildren = childItems.filter((child) => (showCompleted || !child.completed) && (taskMatchesSearch(child) || taskMatchesSearch(item)));
     const completedChildren = childItems.filter((child) => child.completed).length;
-    const state = dueState(item.due_date, item.completed);
+    const state = dueState(item.due_date, item.due_at, item.completed);
 
     return <div className={`activity-task ${isSubtask ? "is-subtask" : ""} ${item.completed ? "is-completed" : ""}`} key={item.id}>
       <div className="activity-task-main">
@@ -369,14 +487,28 @@ export function ActivitiesView({
           {item.description && <p>{item.description}</p>}
           <div className="activity-task-meta">
             <span data-priority={item.priority}>{priorityLabel[item.priority]}</span>
-            <span data-due={state}>{state === "late" ? "Atrasada · " : state === "today" ? "Hoje · " : ""}{dateLabel(item.due_date)}</span>
+            <span data-activity-status={item.activity_status}>{activityStatusLabel[item.activity_status]}</span>
+            {item.activity_type === "material_purchase" && <span data-activity-type="material_purchase">Compras · vinculado à OS</span>}
+            <span data-due={state}>{state === "late" ? "Atrasada · " : state === "today" ? "Hoje · " : ""}{dateLabel(item.due_date, item.due_at)}</span>
             <span>{assigned ? `Responsável: ${assigned.name || assigned.email}` : "Sem responsável"}</span>
           </div>
         </div>
         {canOperate && <div className="activity-task-actions">
-          {!isSubtask && <button type="button" onClick={() => openNewTask(item.group_id, item.id)}>＋ Subatividade</button>}
+          <label className="activity-status-control">
+            <span>Status</span>
+            <select
+              value={item.activity_status}
+              onChange={(event) => void updateActivityStatus(item, event.target.value as PurchaseActivityStatus)}
+              disabled={busyId === item.id}
+            >
+              {activityStatusOptions.map((status) => <option key={status} value={status}>{activityStatusLabel[status]}</option>)}
+            </select>
+          </label>
+          {!isSubtask && item.activity_type !== "material_purchase" && <button type="button" onClick={() => openNewTask(item.group_id, item.id)}>＋ Subatividade</button>}
           <button type="button" onClick={() => setTaskEditor({ mode: "edit", item, groupId: item.group_id, parentId: item.parent_id || "" })}>Editar</button>
-          <button type="button" className="danger" onClick={() => void deleteTask(item)} disabled={busyId === item.id}>Excluir</button>
+          {item.activity_type !== "material_purchase"
+            ? <button type="button" className="danger" onClick={() => void deleteTask(item)} disabled={busyId === item.id}>Excluir</button>
+            : <span className="activity-managed-label">Gerenciada pela OS</span>}
         </div>}
       </div>
       {visibleChildren.length > 0 && <div className="activity-subtasks">{visibleChildren.map((child) => renderTask(child, [], showCompleted, true))}</div>}
@@ -465,13 +597,14 @@ export function ActivitiesView({
       <h2>{taskEditor.mode === "edit" ? "Editar atividade" : taskEditor.parentId ? "Nova subatividade" : "Nova atividade"}</h2>
       <p>Defina o que precisa ser feito. Ao concluir, o item será ocultado dentro do grupo.</p>
       <div className="activity-editor-grid">
-        <label>Grupo<select name="group_id" value={taskEditor.groupId} required onChange={(event) => setTaskEditor((current) => current ? { ...current, groupId: event.target.value, parentId: "" } : current)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
-        <label>Tipo<select name="parent_id" value={taskEditor.parentId} disabled={Boolean(taskEditor.item && items.some((item) => item.parent_id === taskEditor.item?.id))} onChange={(event) => setTaskEditor((current) => current ? { ...current, parentId: event.target.value } : current)}><option value="">Atividade principal</option>{items.filter((item) => !item.parent_id && item.id !== taskEditor.item?.id && item.group_id === taskEditor.groupId).map((item) => <option key={item.id} value={item.id}>Subatividade de: {item.title}</option>)}</select>{taskEditor.item && items.some((item) => item.parent_id === taskEditor.item?.id) && <small>Atividades com subatividades permanecem como atividade principal.</small>}</label>
-        <label className="wide">Título<input name="title" defaultValue={taskEditor.item?.title || ""} placeholder="Ex.: Conferir pedidos com entrega amanhã" required autoFocus /></label>
+        <label>Grupo<select name="group_id" value={taskEditor.groupId} required disabled={taskEditor.item?.activity_type === "material_purchase"} onChange={(event) => setTaskEditor((current) => current ? { ...current, groupId: event.target.value, parentId: "" } : current)}>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+        <label>Tipo<select name="parent_id" value={taskEditor.parentId} disabled={Boolean(taskEditor.item?.activity_type === "material_purchase" || (taskEditor.item && items.some((item) => item.parent_id === taskEditor.item?.id)))} onChange={(event) => setTaskEditor((current) => current ? { ...current, parentId: event.target.value } : current)}><option value="">Atividade principal</option>{items.filter((item) => !item.parent_id && item.id !== taskEditor.item?.id && item.group_id === taskEditor.groupId).map((item) => <option key={item.id} value={item.id}>Subatividade de: {item.title}</option>)}</select>{taskEditor.item && items.some((item) => item.parent_id === taskEditor.item?.id) && <small>Atividades com subatividades permanecem como atividade principal.</small>}</label>
+        <label className="wide">Título<input name="title" defaultValue={taskEditor.item?.title || ""} disabled={taskEditor.item?.activity_type === "material_purchase"} placeholder="Ex.: Conferir pedidos com entrega amanhã" required autoFocus /></label>
         <label className="wide">Descrição<textarea name="description" defaultValue={taskEditor.item?.description || ""} placeholder="Orientações, detalhes ou observações (opcional)." /></label>
-        <label>Prazo<input type="date" name="due_date" defaultValue={taskEditor.item?.due_date || ""} /></label>
+        <label>Prazo<input type="datetime-local" name="due_at" defaultValue={toDueInputValue(taskEditor.item?.due_at || null, taskEditor.item?.due_date || null)} disabled={taskEditor.item?.activity_type === "material_purchase"} />{taskEditor.item?.activity_type === "material_purchase" && <small>Prazo automático de 24 horas após criação ou reabertura.</small>}</label>
         <label>Prioridade<select name="priority" defaultValue={taskEditor.item?.priority || "normal"}><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></label>
-        <label className="wide">Responsável<select name="assigned_to" defaultValue={taskEditor.item?.assigned_to || ""}><option value="">Sem responsável definido</option>{activeProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name || profile.email}</option>)}</select></label>
+        <label>Status<select name="activity_status" defaultValue={taskEditor.item?.activity_status || "pending"}>{activityStatusOptions.map((status) => <option key={status} value={status}>{activityStatusLabel[status]}</option>)}</select></label>
+        <label>Responsável<select name="assigned_to" defaultValue={taskEditor.item?.assigned_to || ""} disabled={taskEditor.item?.activity_type === "material_purchase"}><option value="">Sem responsável definido</option>{activeProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name || profile.email}</option>)}</select></label>
       </div>
       <div className="modal-actions"><button type="button" className="secondary" onClick={() => setTaskEditor(null)}>Cancelar</button><button type="submit" className="primary" disabled={busyId === "task-editor"}>{busyId === "task-editor" ? "Salvando…" : "Salvar atividade"}</button></div>
     </form></div>}

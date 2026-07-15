@@ -40,6 +40,7 @@ import type {
   OrderMaterial,
   OrderPatch,
   Priority,
+  PurchaseActivityStatus,
   Profile,
   Sector,
   SortMode,
@@ -81,6 +82,14 @@ const DEFAULT_CONSULTANTS = [
 ] as const;
 
 const UNASSIGNED_RESPONSIBLE_FILTER = "__unassigned__";
+const PURCHASE_STATUS_LABEL: Record<PurchaseActivityStatus, string> = {
+  pending: "Pendente",
+  awaiting_quote: "Aguardando orçamento",
+  awaiting_separation: "Aguardando separação",
+  awaiting_delivery: "Aguardando entrega",
+  finalized: "Finalizada",
+};
+
 function isPdfPageThumbnailPath(path: string | null | undefined) {
   return Boolean(path?.includes("/pdf-pages/") || driveThumbnailFileId(path));
 }
@@ -618,6 +627,23 @@ export default function Home() {
     }
   }, [modal, isOnline]);
 
+  useEffect(() => {
+    if (!user || !isOnline || !modal || modal === "new") return;
+    const orderId = modal.id;
+    const channel = supabase
+      .channel(`order-materials-${orderId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "order_materials", filter: `order_id=eq.${orderId}` },
+        () => void loadOrderDetails(orderId),
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user, isOnline, modal]);
+
 
   const activeOrders = useMemo(() => orders.filter((order) => order.status !== "completed"), [orders]);
   const completedOrders = useMemo(() => orders.filter((order) => order.status === "completed"), [orders]);
@@ -1131,7 +1157,7 @@ export default function Home() {
         .select("id,comment,created_at,user_id,author:profiles!order_comments_user_id_fkey(name,email)")
         .eq("order_id", orderId)
         .order("created_at", { ascending: true }),
-      supabase.from("order_materials").select("id,order_id,material_name,quantity,unit,width,status,notes,created_at").eq("order_id", orderId).order("created_at"),
+      supabase.from("order_materials").select("id,order_id,material_name,quantity,unit,width,status,availability,purchase_status,purchase_activity_id,available_at,available_by,notes,created_at,updated_at").eq("order_id", orderId).order("created_at"),
       supabase.from("order_checklist_items").select("id,order_id,label,category,completed,position,completed_at,created_at").eq("order_id", orderId).order("position"),
       supabase.from("order_files").select("id,order_id,uploaded_by,updated_by,origin,file_name,file_path,file_type,file_size,drive_url,drive_file_id,drive_folder_id,file_category,version,notes,is_approved,drive_modified_at,drive_last_modified_by_name,drive_last_modified_by_email,updated_at,created_at").eq("order_id", orderId).is("removed_from_order_at", null).order("drive_modified_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }),
     ]);
@@ -1163,7 +1189,7 @@ export default function Home() {
 
   const changeFieldLabel: Record<string, string> = {
     op_number: "Número da OP", client_name: "Cliente", description: "Serviço", delivery_date: "Prazo de produção",
-    priority: "Prioridade", sector_id: "Setor de produção", status: "Status da produção", materials: "Materiais e especificações",
+    priority: "Prioridade", sector_id: "Setor de produção", status: "Status da produção", materials: "Especificações gerais da OS",
     notes: "Observações", consultant_name: "Consultor", installation_scheduled_at: "Data da instalação/entrega",
     installation_address: "Endereço da instalação", installation_team: "Equipe de instalação",
     installation_vehicle: "Veículo", installation_status: "Status da instalação",
@@ -1362,31 +1388,105 @@ export default function Home() {
 
   async function addMaterial(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!modal || modal === "new" || !canUploadFiles || workspaceBusy) return;
+    if (!modal || modal === "new" || !canOperate || workspaceBusy) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
+    const materialName = String(form.get("material_name") || "").trim();
+    const availability = String(form.get("availability") || "available") as OrderMaterial["availability"];
+    const notes = String(form.get("notes") || "").trim() || null;
+    if (!materialName) return;
+
     setWorkspaceBusy(true);
-    const payload = {
+    setDetailError("");
+    const { error: materialError } = await supabase.from("order_materials").insert({
       order_id: modal.id,
-      material_name: String(form.get("material_name") || "").trim(),
-      quantity: Number(form.get("quantity") || 0),
-      unit: String(form.get("unit") || "un"),
-      width: form.get("width") ? Number(form.get("width")) : null,
-      status: String(form.get("status") || "planned"),
-      notes: String(form.get("notes") || "").trim() || null,
-    };
-    const { error: materialError } = await supabase.from("order_materials").insert(payload);
-    if (materialError) setDetailError(`Não foi possível adicionar o material: ${materialError.message}`);
-    else { formElement.reset(); await loadOrderDetails(modal.id); showNotice("Material adicionado à OS."); }
+      material_name: materialName,
+      quantity: 1,
+      unit: "un",
+      status: "planned",
+      availability,
+      notes,
+    });
+
+    if (materialError) {
+      setDetailError(`Não foi possível adicionar o material: ${materialError.message}`);
+    } else {
+      formElement.reset();
+      await loadOrderDetails(modal.id);
+      showNotice(availability === "unavailable"
+        ? "Material adicionado e atividade criada no grupo Compras."
+        : "Material disponível adicionado à OS.");
+    }
+    setWorkspaceBusy(false);
+  }
+
+  async function updateMaterialAvailability(material: OrderMaterial, availability: OrderMaterial["availability"]) {
+    if (!canOperate || workspaceBusy || material.availability === availability) return;
+    setWorkspaceBusy(true);
+    setDetailError("");
+
+    const { error: materialError } = await supabase
+      .from("order_materials")
+      .update({ availability })
+      .eq("id", material.id);
+
+    if (materialError) {
+      setDetailError(`Não foi possível atualizar a disponibilidade: ${materialError.message}`);
+    } else if (modal && modal !== "new") {
+      await loadOrderDetails(modal.id);
+      showNotice(availability === "available"
+        ? "Material marcado como disponível. A atividade de compra foi finalizada."
+        : "Material marcado como não disponível. A atividade de compra está ativa.");
+    }
+    setWorkspaceBusy(false);
+  }
+
+  async function editMaterial(material: OrderMaterial) {
+    if (!canOperate || workspaceBusy) return;
+    const nextName = window.prompt("Nome do material", material.material_name)?.trim();
+    if (!nextName) return;
+    const nextNotes = window.prompt("Observação opcional", material.notes || "");
+    if (nextNotes === null) return;
+
+    setWorkspaceBusy(true);
+    setDetailError("");
+    const { error: materialError } = await supabase
+      .from("order_materials")
+      .update({ material_name: nextName, notes: nextNotes.trim() || null })
+      .eq("id", material.id);
+
+    if (materialError) {
+      setDetailError(`Não foi possível editar o material: ${materialError.message}`);
+    } else if (modal && modal !== "new") {
+      await loadOrderDetails(modal.id);
+      showNotice("Material e atividade vinculada atualizados.");
+    }
     setWorkspaceBusy(false);
   }
 
   async function deleteMaterial(material: OrderMaterial) {
-    if (!canOperate || workspaceBusy || !window.confirm(`Remover ${material.material_name} desta OS?`)) return;
+    if (!canOperate || workspaceBusy) return;
+    const hasOpenPurchase = material.purchase_activity_id && material.purchase_status !== "finalized";
+    const confirmation = hasOpenPurchase
+      ? `Remover ${material.material_name} desta OS e cancelar a atividade de compra vinculada?`
+      : `Remover ${material.material_name} desta OS?`;
+    if (!window.confirm(confirmation)) return;
+
     setWorkspaceBusy(true);
+    if (material.purchase_activity_id) {
+      const { error: activityDeleteError } = await supabase.from("activities").delete().eq("id", material.purchase_activity_id);
+      if (activityDeleteError) {
+        setDetailError(`Não foi possível cancelar a atividade vinculada: ${activityDeleteError.message}`);
+        setWorkspaceBusy(false);
+        return;
+      }
+    }
     const { error: materialError } = await supabase.from("order_materials").delete().eq("id", material.id);
     if (materialError) setDetailError(`Não foi possível remover o material: ${materialError.message}`);
-    else if (modal && modal !== "new") await loadOrderDetails(modal.id);
+    else if (modal && modal !== "new") {
+      await loadOrderDetails(modal.id);
+      showNotice("Material removido da OS.");
+    }
     setWorkspaceBusy(false);
   }
 
@@ -2562,7 +2662,7 @@ export default function Home() {
             <label>Data da instalação ou entrega<input type="date" name="target_date" defaultValue={orderTargetDate(modal)} required /><small>Prazo de produção: {shortDateOnlyLabel(modal.delivery_date)}. Ao alterar a data, o prazo será recalculado para 1 dia útil antes.</small></label>
             <label>Prioridade<select name="priority" defaultValue={modal.priority}><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></label>
             <label className="wide">Consultor responsável<select name="consultant_name" defaultValue={modal.consultant_name || ""}><option value="">Não definido</option>{consultantOptions.map((consultant) => <option key={consultant} value={consultant}>{consultant}</option>)}</select></label>
-            <label className="wide">Materiais e especificações<textarea name="materials" defaultValue={modal.materials || ""} /></label>
+            <label className="wide">Especificações gerais da OS<textarea name="materials" defaultValue={modal.materials || ""} /></label>
             <label className="wide">Observações gerais<textarea name="notes" defaultValue={modal.notes || ""} /></label>
           </div>
           <div className="detail-grid"><div><small>CLIENTE</small><b>{modal.client_name}</b></div><div><small>INSTALAÇÃO / ENTREGA</small><b>{orderTargetDateLabel(modal)}</b></div><div><small>PRAZO DE PRODUÇÃO</small><b>{dueLabel(modal.delivery_date)}</b></div><div><small>CONSULTOR</small><b>{modal.consultant_name || "Não definido"}</b></div><div><small>CRIADO EM</small><b>{dateTimeLabel(modal.created_at)}</b></div></div>
@@ -2573,11 +2673,44 @@ export default function Home() {
             <label>Status<select name="status" defaultValue={modal.status}>{statusesForSector(activeSectors.find((sector) => sector.id === modal.sector_id)?.name).map((status) => <option key={status} value={statusToDb[status]}>{status}</option>)}<option value="paused">Pausado</option><option value="completed">Concluído</option></select></label>
           </div>
           <div className="v3-production-actions">{canOperate && <button type="submit" className="primary" disabled={busyOrderId === modal.id}>{busyOrderId === modal.id ? "Salvando…" : "Salvar produção"}</button>}{canOperate && modal.status !== "completed" && <button type="button" onClick={() => void finishOrder(modal)}>Finalizar ordem</button>}</div>
-        </form> : detailTab === "materials" ? <div className="os-workspace-panel">
-          <div className="os-section-heading"><div><small>PLANEJAMENTO DE INSUMOS</small><h3>Materiais da ordem</h3></div><span>{materials.length} item(ns)</span></div>
-          <div className="os-material-table"><div className="os-table-head"><span>Material</span><span>Quantidade</span><span>Status</span><span></span></div>{materials.map((material) => <div className="os-table-row" key={material.id}><div><b>{material.material_name}</b><small>{material.notes || "Sem observação"}{material.width ? ` · largura ${material.width} m` : ""}</small></div><span>{material.quantity} {material.unit}</span><span className={`material-status ${material.status}`}>{material.status === "reserved" ? "Reservado" : material.status === "consumed" ? "Consumido" : "Previsto"}</span><button type="button" onClick={() => void deleteMaterial(material)} disabled={!canOperate || workspaceBusy}>×</button></div>)}</div>
-          {!materials.length && <div className="workspace-empty">Nenhum material estruturado. Use o formulário abaixo para iniciar o planejamento.</div>}
-          {canOperate && <form className="os-inline-form" onSubmit={addMaterial}><input name="material_name" placeholder="Material" required /><input name="quantity" type="number" min="0.01" step="0.01" placeholder="Qtd." required /><select name="unit"><option>un</option><option>m</option><option>m²</option><option>chapa</option><option>litro</option><option>kg</option></select><input name="width" type="number" min="0" step="0.01" placeholder="Largura (m)" /><select name="status"><option value="planned">Previsto</option><option value="reserved">Reservado</option><option value="consumed">Consumido</option></select><input name="notes" placeholder="Observação" /><button type="submit" className="primary" disabled={workspaceBusy}>Adicionar</button></form>}
+        </form> : detailTab === "materials" ? <div className="os-workspace-panel material-availability-panel">
+          <div className="os-section-heading"><div><small>DISPONIBILIDADE DA OS</small><h3>Materiais da ordem</h3><p>Informe somente o material e se ele está disponível. Itens indisponíveis geram uma atividade automática em Compras.</p></div><span>{materials.length} item(ns)</span></div>
+          <div className="os-material-table simplified-material-table">
+            <div className="os-table-head"><span>Material</span><span>Disponibilidade</span><span>Compra</span><span>Ações</span></div>
+            {materials.map((material) => {
+              const purchaseStatus = material.purchase_status ? PURCHASE_STATUS_LABEL[material.purchase_status] : null;
+              return <div className="os-table-row material-availability-row" key={material.id}>
+                <div className="material-copy"><b>{material.material_name}</b><small>{material.notes || "Sem observação"}</small></div>
+                <select
+                  className={`material-availability-select ${material.availability}`}
+                  value={material.availability}
+                  onChange={(event) => void updateMaterialAvailability(material, event.target.value as OrderMaterial["availability"])}
+                  disabled={!canOperate || workspaceBusy}
+                  aria-label={`Disponibilidade de ${material.material_name}`}
+                >
+                  <option value="available">Disponível</option>
+                  <option value="unavailable">Não disponível</option>
+                </select>
+                <div className="material-purchase-state">
+                  {material.availability === "available"
+                    ? <span className="material-status available">● Disponível</span>
+                    : <><span className={`material-status purchase ${material.purchase_status || "pending"}`}>● {purchaseStatus || "Pendente"}</span><small>Prazo inicial: 24 horas</small></>}
+                </div>
+                <div className="material-row-actions">
+                  {material.purchase_activity_id && <button type="button" onClick={() => { setModal(null); navigateTo("activities"); }}>Abrir Compras</button>}
+                  <button type="button" onClick={() => void editMaterial(material)} disabled={!canOperate || workspaceBusy}>Editar</button>
+                  <button type="button" className="danger" onClick={() => void deleteMaterial(material)} disabled={!canOperate || workspaceBusy}>Excluir</button>
+                </div>
+              </div>;
+            })}
+          </div>
+          {!materials.length && <div className="workspace-empty">Nenhum material cadastrado. Adicione o primeiro item e informe se ele está disponível.</div>}
+          {canOperate && <form className="os-inline-form simplified-material-form" onSubmit={addMaterial}>
+            <label><span>Material</span><input name="material_name" placeholder="Ex.: Metalom 20 × 20, ACM preto, tinta azul" required /></label>
+            <label><span>Disponibilidade</span><select name="availability" defaultValue="available"><option value="available">Disponível</option><option value="unavailable">Não disponível</option></select></label>
+            <label><span>Observação opcional</span><input name="notes" placeholder="Medida, cor ou especificação" /></label>
+            <button type="submit" className="primary" disabled={workspaceBusy}>{workspaceBusy ? "Salvando…" : "Adicionar material"}</button>
+          </form>}
         </div> : detailTab === "files" ? <div className="os-workspace-panel">
           <div className="os-section-heading"><div><small>GOOGLE DRIVE</small><h3>Arquivos e pastas da ordem</h3></div><span>Upload automático e vínculo manual</span></div>
           <div className="drive-guidance"><b>Organização automática no Drive</b><span>O sistema cria a estrutura Cliente → OP → Subpedido → Arte, Aprovação, Produção, Documentos, Fotos, Instalação e Outros. A sincronização percorre todas as subpastas da ordem.</span></div>

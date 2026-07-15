@@ -96,7 +96,24 @@ export type HistoryEntry = {
 export type OrderChangeEntry = { id: string; field_name: string; old_value: string | null; new_value: string | null; change_group: string; created_at: string; changed_by: string | null; };
 
 export type CommentEntry = { id: string; comment: string; created_at: string; user_id: string; author: Author };
-export type OrderMaterial = { id: string; order_id: string; material_name: string; quantity: number; unit: string; width: number | null; status: "planned" | "reserved" | "consumed"; notes: string | null; created_at: string };
+export type PurchaseActivityStatus = "pending" | "awaiting_quote" | "awaiting_separation" | "awaiting_delivery" | "finalized";
+export type OrderMaterial = {
+  id: string;
+  order_id: string;
+  material_name: string;
+  quantity: number;
+  unit: string;
+  width: number | null;
+  status: "planned" | "reserved" | "consumed";
+  availability: "available" | "unavailable";
+  purchase_status: PurchaseActivityStatus | null;
+  purchase_activity_id: string | null;
+  available_at: string | null;
+  available_by: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
 export type ChecklistItem = { id: string; order_id: string; label: string; category: string; completed: boolean; position: number; completed_at: string | null; created_at: string };
 export type OrderFileEntry = {
   id: string;
