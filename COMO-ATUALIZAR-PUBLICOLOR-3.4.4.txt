@@ -1,0 +1,28 @@
+PUBLICOLOR PCP 3.4.4 — COMO ATUALIZAR
+
+1. Preserve na raiz do projeto:
+   .git
+   .env.local
+
+2. Substitua os demais arquivos pelo conteúdo do ZIP 3.4.4.
+
+3. Use Node.js 24.x e execute:
+
+corepack enable
+pnpm install --frozen-lockfile
+pnpm validate
+
+4. Publique:
+
+git add -A
+git commit -m "Publicolor 3.4.4: acoes coletivas nas pilhas do Kanban"
+git push
+
+5. Após o deploy:
+   - computador: Ctrl + Shift + R;
+   - celular/PWA: feche e abra novamente o aplicativo.
+
+BANCO DE DADOS
+
+Não execute novo SQL para a versão 3.4.4.
+O SQL cumulativo corrigido da versão 3.4.2 continua sendo a estrutura necessária.

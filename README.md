@@ -1,6 +1,17 @@
-# Publicolor PCP 3.4.3
+# Publicolor PCP 3.4.4
 
 Sistema operacional de PCP para pedidos, produção, agenda, atividades, compras, clientes, usuários, arquivos e integrações da Publicolor.
+
+
+## Ações coletivas nas pilhas — 3.4.4
+
+- A pilha recolhida agora mostra camadas mais visíveis, selo `PILHA` e barra permanente de ações.
+- Histórico e comentários abrem uma lista dos subpedidos para escolher qual OS consultar.
+- Mover setor, alterar status e finalizar podem ser aplicados a todos os itens ou somente aos subpedidos selecionados.
+- Toda alteração coletiva usa uma única operação de banco e atualiza os cartões sem recarregar a página.
+- Cada subpedido continua com suas ações individuais quando a pilha é expandida.
+- As pilhas continuam sempre recolhidas após recarregar a página.
+- Não há alteração de banco de dados nesta versão.
 
 
 ## Pilhas de subpedidos no Kanban — 3.4.3
@@ -24,7 +35,7 @@ Sistema operacional de PCP para pedidos, produção, agenda, atividades, compras
 - matriz de permissões para Administrador, Gerente, Operador e Visualizador;
 - exceções individuais de permissão;
 - auditoria de mudanças administrativas;
-- cache PWA atualizado para 3.4.2.
+- cache PWA atualizado para 3.4.4.
 
 ## Páginas
 

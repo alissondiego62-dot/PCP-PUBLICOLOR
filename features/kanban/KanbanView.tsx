@@ -3,13 +3,38 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { DbStatus, DeadlineFilter, Order, Priority, Sector, SortMode, UiStatus } from "@/lib/pcp-types";
-import { priorityLabel, statusDotClass, statusesForSector, statusToDb } from "@/lib/pcp-config";
+import { isPcpSectorName, priorityLabel, statusDotClass, statusesForSector, statusToDb } from "@/lib/pcp-config";
 import { dueLabel, initials, shortDateOnlyLabel, targetDateForOrder } from "@/lib/pcp-formatters";
 import { driveThumbnailFileId } from "@/lib/order-thumbnail";
 import { AppIcon } from "@/components/ui/AppIcon";
 
 const UNASSIGNED_RESPONSIBLE_FILTER = "__unassigned__";
 const sortLabels: Record<SortMode, string> = { newest: "Mais recentes", oldest: "Mais antigos", delivery: "Prazo" };
+
+const STACK_STATUS_OPTIONS: Array<{ value: DbStatus; label: string }> = [
+  { value: "waiting", label: "Aguardando" },
+  { value: "in_progress", label: "Em andamento" },
+  { value: "waiting_client", label: "Aguardando cliente" },
+  { value: "in_transport", label: "Em transporte" },
+  { value: "paused", label: "Pausado" },
+];
+
+function stackStatusLabel(status: DbStatus) {
+  return STACK_STATUS_OPTIONS.find((option) => option.value === status)?.label || status;
+}
+
+type StackViewerState = {
+  parentOp: string;
+  orders: Order[];
+  tab: "history" | "comments";
+};
+
+type StackActionState = {
+  mode: "move" | "status" | "finish";
+  parentOp: string;
+  orders: Order[];
+  selectedIds: Set<string>;
+};
 
 export type KanbanMetricKey =
   | "active"
@@ -124,6 +149,7 @@ function OrderThumbnail({
 type KanbanOrderCardProps = {
   order: Order;
   canOperate: boolean;
+  canFinalize: boolean;
   isAdmin: boolean;
   busyOrderId: string | null;
   commentCount: number;
@@ -141,7 +167,7 @@ type KanbanOrderCardProps = {
 };
 
 function KanbanOrderCard({
-  order, canOperate, isAdmin, busyOrderId, commentCount, cardImageUrl,
+  order, canOperate, canFinalize, isAdmin, busyOrderId, commentCount, cardImageUrl,
   onDragStart, onDragEnd, onOpenOrder, onDeleteOrder, onPreview,
   onThumbnailVisible, onMoveOrder, onChangeStatus, onFinishOrder, stackedChild = false,
 }: KanbanOrderCardProps) {
@@ -172,7 +198,7 @@ function KanbanOrderCard({
       <button type="button" title="Comentários" aria-label={`Abrir comentários da OP ${order.op_number}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "comments"); }}><AppIcon name="comments" />{Boolean(commentCount) && <span>{commentCount}</span>}</button>
       {canOperate && <button type="button" title="Mover setor" aria-label={`Mover OP ${order.op_number} de setor`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onMoveOrder(order); }}><AppIcon name="move" /></button>}
       {canOperate && <button type="button" className={`status-${order.status}`} title="Alterar status" aria-label={`Alterar status da OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onChangeStatus(order); }}><AppIcon name={order.status === "paused" ? "pause" : "status"} /></button>}
-      {canOperate && <button type="button" className="finish-icon" title="Finalizar ordem" aria-label={`Finalizar OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onFinishOrder(order); }}><AppIcon name="check" /></button>}
+      {canFinalize && <button type="button" className="finish-icon" title="Finalizar ordem" aria-label={`Finalizar OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onFinishOrder(order); }}><AppIcon name="check" /></button>}
     </footer>
   </div>;
 }
@@ -219,9 +245,19 @@ type KanbanOrderStackProps = {
   onToggle: () => void;
   orderCardProps: Omit<KanbanOrderCardProps, "order" | "commentCount" | "stackedChild">;
   commentCounts: Record<string, number>;
+  onOpenStackViewer: (stack: KanbanStack, tab: "history" | "comments") => void;
+  onOpenStackAction: (stack: KanbanStack, mode: "move" | "status" | "finish") => void;
 };
 
-function KanbanOrderStack({ stack, expanded, onToggle, orderCardProps, commentCounts }: KanbanOrderStackProps) {
+function KanbanOrderStack({
+  stack,
+  expanded,
+  onToggle,
+  orderCardProps,
+  commentCounts,
+  onOpenStackViewer,
+  onOpenStackAction,
+}: KanbanOrderStackProps) {
   const orders = [...stack.orders].sort(compareStackChildren);
   const firstOrder = orders[0];
   const clients = [...new Set(orders.map((order) => order.client_name.trim()).filter(Boolean))];
@@ -241,7 +277,15 @@ function KanbanOrderStack({ stack, expanded, onToggle, orderCardProps, commentCo
       <h3>{clientLabel}</h3><p className="order-service">Subpedidos no mesmo setor e status.</p>
       <div className="kanban-stack-metrics"><span><small>ITENS</small><b>{orders.length}</b></span><span><small>PRÓXIMO PRAZO</small><b>{orderTargetDateLabel(nearestOrder)}</b></span><span><small>RESPONSÁVEL</small><b>{responsibleLabel}</b></span></div>
       <div className={`due order-deadlines ${lateCount ? "late" : ""}`}><span>Produção mais próxima: <b>{dueLabel(nearestOrder.delivery_date)}</b></span><small>{totalComments ? `${totalComments} comentário${totalComments === 1 ? "" : "s"} na pilha` : "Sem comentários"}</small></div>
-      <footer className="kanban-stack-footer"><span>{expanded ? "Recolher subpedidos" : "Abrir subpedidos"}</span><AppIcon name={expanded ? "chevronDown" : "chevronRight"} /></footer>
+      <footer className="kanban-stack-icon-actions" aria-label={`Ações coletivas da OP ${stack.parentOp}`}>
+        <button type="button" className="stack-expand-action" title={expanded ? "Recolher pedidos" : "Abrir pedidos"} aria-label={`${expanded ? "Recolher" : "Abrir"} pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onToggle(); }}><AppIcon name={expanded ? "chevronDown" : "chevronRight"} /></button>
+        <button type="button" title="Históricos da pilha" aria-label={`Visualizar históricos dos pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackViewer(stack, "history"); }}><AppIcon name="history" /></button>
+        <button type="button" title="Comentários da pilha" aria-label={`Visualizar comentários dos pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackViewer(stack, "comments"); }}><AppIcon name="comments" />{Boolean(totalComments) && <span>{totalComments}</span>}</button>
+        {orderCardProps.canOperate && <button type="button" title={`Mover ${orders.length} pedidos`} aria-label={`Mover todos os pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackAction(stack, "move"); }}><AppIcon name="move" /></button>}
+        {orderCardProps.canOperate && <button type="button" className={`status-${firstOrder.status}`} title={`Alterar status de ${orders.length} pedidos`} aria-label={`Alterar status de todos os pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackAction(stack, "status"); }}><AppIcon name={firstOrder.status === "paused" ? "pause" : "status"} /></button>}
+        {orderCardProps.canFinalize && <button type="button" className="finish-icon" title={`Finalizar ${orders.length} pedidos`} aria-label={`Finalizar todos os pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackAction(stack, "finish"); }}><AppIcon name="check" /></button>}
+      </footer>
+      <div className="kanban-stack-collective-label">{orders.length} pedidos · ações nos itens selecionados</div>
     </article>
     {expanded && <div className="kanban-stack-children" aria-label={`Subpedidos da OP ${stack.parentOp}`}>{orders.map((order) => <KanbanOrderCard key={order.id} order={order} commentCount={commentCounts[order.id] || 0} stackedChild {...orderCardProps} />)}</div>}
   </section>;
@@ -273,6 +317,7 @@ export type KanbanViewProps = {
   topScrollRef: RefObject<HTMLDivElement | null>;
   dragOverLane: string | null;
   canOperate: boolean;
+  canFinalize: boolean;
   isAdmin: boolean;
   busyOrderId: string | null;
   commentCounts: Record<string, number>;
@@ -304,6 +349,9 @@ export type KanbanViewProps = {
   onMoveOrder: (order: Order) => void;
   onChangeStatus: (order: Order) => void;
   onFinishOrder: (order: Order) => void;
+  onBulkMoveOrders: (orders: Order[], sectorId: string) => Promise<boolean>;
+  onBulkChangeStatus: (orders: Order[], status: DbStatus) => Promise<boolean>;
+  onBulkFinishOrders: (orders: Order[]) => Promise<boolean>;
 };
 
 export function KanbanView(props: KanbanViewProps) {
@@ -311,12 +359,13 @@ export function KanbanView(props: KanbanViewProps) {
     activeOrderCounts, activeOrders, installationOrders, filtered, activeSectors, visibleSectors,
     search, filtersOpen, activeFilterCount, activeMetric, thumbnailProgress, sortMode, loading, sectorFilter, statusFilter,
     priorityFilter, responsibleFilter, deadlineFilter, consultantOptions, activeKanbanSectorIndex,
-    boardScrollWidth, boardRef, topScrollRef, dragOverLane, canOperate, isAdmin, busyOrderId,
+    boardScrollWidth, boardRef, topScrollRef, dragOverLane, canOperate, canFinalize, isAdmin, busyOrderId,
     commentCounts, hasActiveSearch, error, cardImageUrl, onSearchChange, onToggleFilters,
     onCloseFilters, onCycleSort, onSectorFilterChange, onStatusFilterChange, onPriorityFilterChange,
     onResponsibleFilterChange, onDeadlineFilterChange, onMetricSelect, onClearFilters, onScrollToSector,
     onTopScroll, onBoardScroll, onDragStart, onDragEnd, onDragOverLane, onDrop, onOpenOrder,
     onDeleteOrder, onPreview, onThumbnailVisible, onMoveOrder, onChangeStatus, onFinishOrder,
+    onBulkMoveOrders, onBulkChangeStatus, onBulkFinishOrders,
   } = props;
   const [displayMode, setDisplayMode] = useState<"compact" | "detailed">(() => {
     if (typeof window === "undefined") return "detailed";
@@ -335,6 +384,72 @@ export function KanbanView(props: KanbanViewProps) {
       else next.add(stackKey);
       return next;
     });
+  }
+
+  const [stackViewer, setStackViewer] = useState<StackViewerState | null>(null);
+  const [stackAction, setStackAction] = useState<StackActionState | null>(null);
+  const [stackActionBusy, setStackActionBusy] = useState(false);
+
+  function openStackViewer(stack: KanbanStack, tab: "history" | "comments") {
+    setStackViewer({ parentOp: stack.parentOp, orders: [...stack.orders].sort(compareStackChildren), tab });
+  }
+
+  function openStackAction(stack: KanbanStack, mode: StackActionState["mode"]) {
+    const ordered = [...stack.orders].sort(compareStackChildren);
+    setStackAction({
+      mode,
+      parentOp: stack.parentOp,
+      orders: ordered,
+      selectedIds: new Set(ordered.map((order) => order.id)),
+    });
+  }
+
+  function toggleStackActionOrder(orderId: string) {
+    setStackAction((current) => {
+      if (!current) return current;
+      const selectedIds = new Set(current.selectedIds);
+      if (selectedIds.has(orderId)) selectedIds.delete(orderId);
+      else selectedIds.add(orderId);
+      return { ...current, selectedIds };
+    });
+  }
+
+  function selectAllStackActionOrders() {
+    setStackAction((current) => current ? { ...current, selectedIds: new Set(current.orders.map((order) => order.id)) } : current);
+  }
+
+  function clearStackActionOrders() {
+    setStackAction((current) => current ? { ...current, selectedIds: new Set() } : current);
+  }
+
+  async function runStackMove(sectorId: string) {
+    if (!stackAction || stackActionBusy) return;
+    const selectedOrders = stackAction.orders.filter((order) => stackAction.selectedIds.has(order.id));
+    if (!selectedOrders.length) return;
+    setStackActionBusy(true);
+    const updated = await onBulkMoveOrders(selectedOrders, sectorId);
+    setStackActionBusy(false);
+    if (updated) setStackAction(null);
+  }
+
+  async function runStackStatus(status: DbStatus) {
+    if (!stackAction || stackActionBusy) return;
+    const selectedOrders = stackAction.orders.filter((order) => stackAction.selectedIds.has(order.id));
+    if (!selectedOrders.length) return;
+    setStackActionBusy(true);
+    const updated = await onBulkChangeStatus(selectedOrders, status);
+    setStackActionBusy(false);
+    if (updated) setStackAction(null);
+  }
+
+  async function runStackFinish() {
+    if (!stackAction || stackActionBusy) return;
+    const selectedOrders = stackAction.orders.filter((order) => stackAction.selectedIds.has(order.id));
+    if (!selectedOrders.length) return;
+    setStackActionBusy(true);
+    const updated = await onBulkFinishOrders(selectedOrders);
+    setStackActionBusy(false);
+    if (updated) setStackAction(null);
   }
 
   const groupedOrders = useMemo(() => {
@@ -471,7 +586,7 @@ export function KanbanView(props: KanbanViewProps) {
               <div className="lane-head"><b><i className={`dot ${statusDotClass(status)}`} />{status}</b><span>{laneOrders.length}</span></div>
               {groupLaneOrdersAsStacks(`${sector.id}:${status}`, laneOrders).map((stack) => {
                 const sharedOrderCardProps: Omit<KanbanOrderCardProps, "order" | "commentCount" | "stackedChild"> = {
-                  canOperate, isAdmin, busyOrderId, cardImageUrl, onDragStart, onDragEnd, onOpenOrder,
+                  canOperate, canFinalize, isAdmin, busyOrderId, cardImageUrl, onDragStart, onDragEnd, onOpenOrder,
                   onDeleteOrder, onPreview, onThumbnailVisible, onMoveOrder, onChangeStatus, onFinishOrder,
                 };
                 if (stack.orders.length === 1) {
@@ -485,6 +600,8 @@ export function KanbanView(props: KanbanViewProps) {
                   onToggle={() => toggleStack(stack.key)}
                   orderCardProps={sharedOrderCardProps}
                   commentCounts={commentCounts}
+                  onOpenStackViewer={openStackViewer}
+                  onOpenStackAction={openStackAction}
                 />;
               })}
               {!laneOrders.length && <div className="empty-lane">{canOperate ? "Solte um pedido aqui" : "Nenhum pedido"}</div>}
@@ -495,5 +612,75 @@ export function KanbanView(props: KanbanViewProps) {
       {!loading && hasActiveSearch && !filtered.length && <div className="search-empty"><span>⌕</span><b>Nenhum pedido encontrado</b><p>Tente alterar o termo pesquisado ou limpar os filtros.</p><button type="button" onClick={onClearFilters}>Limpar busca e filtros</button></div>}
       {!loading && !activeSectors.length && !error && <div className="empty-board">Nenhum setor cadastrado.</div>}
     </section>
+
+    {stackViewer && <div className="overlay quick-action-overlay" onMouseDown={() => setStackViewer(null)}>
+      <section className="modal quick-action-sheet kanban-stack-viewer-sheet" onMouseDown={(event) => event.stopPropagation()}>
+        <button type="button" className="close" aria-label="Fechar" onClick={() => setStackViewer(null)}>×</button>
+        <p className="eyebrow">{stackViewer.tab === "history" ? "HISTÓRICOS DA PILHA" : "COMENTÁRIOS DA PILHA"}</p>
+        <h2>OP {stackViewer.parentOp}</h2>
+        <p>Selecione o subpedido que deseja visualizar.</p>
+        <div className="kanban-stack-viewer-list">
+          {stackViewer.orders.map((order) => <button type="button" key={order.id} onClick={() => { setStackViewer(null); onOpenOrder(order, stackViewer.tab); }}>
+            <AppIcon name={stackViewer.tab === "history" ? "history" : "comments"} />
+            <span><b>OP {order.op_number}</b><small>{order.description}</small></span>
+            {stackViewer.tab === "comments" && Boolean(commentCounts[order.id]) && <em>{commentCounts[order.id]}</em>}
+            <AppIcon name="chevronRight" />
+          </button>)}
+        </div>
+      </section>
+    </div>}
+
+    {stackAction && <div className="overlay quick-action-overlay" onMouseDown={() => { if (!stackActionBusy) setStackAction(null); }}>
+      <section className="modal quick-action-sheet kanban-stack-action-sheet" onMouseDown={(event) => event.stopPropagation()}>
+        <button type="button" className="close" aria-label="Fechar" disabled={stackActionBusy} onClick={() => setStackAction(null)}>×</button>
+        <p className="eyebrow">{stackAction.mode === "move" ? "MOVER PILHA" : stackAction.mode === "status" ? "ALTERAR STATUS DA PILHA" : "FINALIZAR PILHA"}</p>
+        <h2>OP {stackAction.parentOp}</h2>
+        <p>{stackAction.selectedIds.size} de {stackAction.orders.length} pedidos serão alterados.</p>
+
+        <div className="kanban-stack-selection-toolbar">
+          <button type="button" disabled={stackActionBusy} onClick={selectAllStackActionOrders}>Selecionar todos</button>
+          <button type="button" disabled={stackActionBusy} onClick={clearStackActionOrders}>Limpar seleção</button>
+        </div>
+
+        <div className="kanban-stack-selection-list" aria-label="Pedidos que receberão a alteração">
+          {stackAction.orders.map((order) => <label key={order.id} className={stackAction.selectedIds.has(order.id) ? "selected" : ""}>
+            <input type="checkbox" checked={stackAction.selectedIds.has(order.id)} disabled={stackActionBusy} onChange={() => toggleStackActionOrder(order.id)} />
+            <span><b>OP {order.op_number}</b><small>{order.description}</small></span>
+            <em>{stackStatusLabel(order.status)}</em>
+          </label>)}
+        </div>
+
+        {stackAction.mode === "move" && <div className="quick-action-options kanban-stack-target-options">
+          {activeSectors.map((sector) => {
+            const currentSector = stackAction.orders.every((order) => order.sector_id === sector.id);
+            return <button type="button" key={sector.id} className={currentSector ? "current" : ""} disabled={stackActionBusy || !stackAction.selectedIds.size || currentSector} onClick={() => void runStackMove(sector.id)}>
+              <AppIcon name="move" /><span>{sector.name}</span>{currentSector && <small>Atual</small>}
+            </button>;
+          })}
+        </div>}
+
+        {stackAction.mode === "status" && <div className="quick-action-options status-options kanban-stack-target-options">
+          {STACK_STATUS_OPTIONS.filter((option) => {
+            if (option.value === "paused" || option.value === "waiting") return true;
+            const sectorName = activeSectors.find((sector) => sector.id === stackAction.orders[0]?.sector_id)?.name || "";
+            return isPcpSectorName(sectorName)
+              ? option.value === "waiting_client" || option.value === "in_transport"
+              : option.value === "in_progress";
+          }).map((option) => {
+            const currentStatus = stackAction.orders.every((order) => order.status === option.value);
+            return <button type="button" key={option.value} className={currentStatus ? "current" : ""} disabled={stackActionBusy || !stackAction.selectedIds.size || currentStatus} onClick={() => void runStackStatus(option.value)}>
+              <AppIcon name={option.value === "paused" ? "pause" : "status"} /><span>{option.label}</span>{currentStatus && <small>Atual</small>}
+            </button>;
+          })}
+        </div>}
+
+        {stackAction.mode === "finish" && <div className="kanban-stack-finish-panel">
+          <div><AppIcon name="alert" /><span><b>Finalização coletiva</b><small>Os pedidos selecionados sairão do Kanban ativo e irão para Concluídos.</small></span></div>
+          <button type="button" className="primary" disabled={stackActionBusy || !stackAction.selectedIds.size} onClick={() => void runStackFinish()}><AppIcon name="check" /> Finalizar {stackAction.selectedIds.size} pedido{stackAction.selectedIds.size === 1 ? "" : "s"}</button>
+        </div>}
+
+        {stackActionBusy && <div className="quick-action-saving">Aplicando alteração aos pedidos selecionados…</div>}
+      </section>
+    </div>}
   </>;
 }

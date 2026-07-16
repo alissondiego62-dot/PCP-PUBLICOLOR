@@ -2184,6 +2184,73 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     if (changed) setStatusOrderTarget(null);
   }
 
+  async function bulkUpdateKanbanOrders(
+    targetOrders: Order[],
+    patch: OrderPatch,
+    successMessage: string,
+    allowed: boolean,
+  ) {
+    if (!allowed || !targetOrders.length || busyOrderId) return false;
+    const ids = targetOrders.map((order) => order.id);
+    const originalById = new Map(targetOrders.map((order) => [order.id, order]));
+    setBusyOrderId(ids[0]);
+    setError("");
+
+    setOrders((current) => current.map((order) => ids.includes(order.id) ? { ...order, ...patch } : order));
+
+    const { data: updatedRows, error: updateError } = await supabase
+      .from("orders")
+      .update(patch)
+      .in("id", ids)
+      .select("id,sector_id,status,blocked,completed_at,updated_at");
+
+    if (updateError || !updatedRows || updatedRows.length !== ids.length) {
+      setOrders((current) => current.map((order) => originalById.get(order.id) || order));
+      const message = updateError?.message || `Somente ${updatedRows?.length || 0} de ${ids.length} pedidos foram atualizados.`;
+      setError(`Não foi possível aplicar a alteração na pilha: ${message}`);
+      setBusyOrderId(null);
+      return false;
+    }
+
+    const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
+    setOrders((current) => current.map((order) => updatedById.has(order.id) ? { ...order, ...updatedById.get(order.id) } : order));
+    showNotice(successMessage);
+    setBusyOrderId(null);
+    return true;
+  }
+
+  async function moveStackOrders(targetOrders: Order[], sectorId: string) {
+    if (!targetOrders.length || !canMoveProduction) return false;
+    const sectorName = activeSectors.find((sector) => sector.id === sectorId)?.name || "";
+    let nextStatus = targetOrders[0].status;
+    if (!isPcpSectorName(sectorName) && (nextStatus === "in_transport" || nextStatus === "waiting_client")) nextStatus = "waiting";
+    if (isPcpSectorName(sectorName) && nextStatus === "in_progress") nextStatus = "waiting";
+    return bulkUpdateKanbanOrders(
+      targetOrders,
+      { sector_id: sectorId, status: nextStatus },
+      `${targetOrders.length} pedido(s) movido(s) para ${sectorName || "o novo setor"}.`,
+      canMoveProduction,
+    );
+  }
+
+  async function changeStackOrdersStatus(targetOrders: Order[], status: DbStatus) {
+    return bulkUpdateKanbanOrders(
+      targetOrders,
+      { status },
+      `Status atualizado em ${targetOrders.length} pedido(s).`,
+      canMoveProduction,
+    );
+  }
+
+  async function finishStackOrders(targetOrders: Order[]) {
+    return bulkUpdateKanbanOrders(
+      targetOrders,
+      { status: "completed", completed_at: new Date().toISOString(), blocked: false },
+      `${targetOrders.length} pedido(s) finalizado(s) e enviado(s) para Concluídos.`,
+      canFinalizeOrders,
+    );
+  }
+
   async function finishOrder(order: Order) {
     if (!canFinalizeOrders) return;
     if (!window.confirm(`Finalizar a OP ${order.op_number}? O pedido sairá do Kanban ativo.`)) return;
@@ -2886,6 +2953,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         topScrollRef={topScrollRef}
         dragOverLane={dragOverLane}
         canOperate={canMoveProduction}
+        canFinalize={canFinalizeOrders}
         isAdmin={canDeleteOrders}
         busyOrderId={busyOrderId}
         commentCounts={commentCounts}
@@ -2917,6 +2985,9 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         onMoveOrder={setMoveOrderTarget}
         onChangeStatus={setStatusOrderTarget}
         onFinishOrder={(order) => void finishOrder(order)}
+        onBulkMoveOrders={moveStackOrders}
+        onBulkChangeStatus={changeStackOrdersStatus}
+        onBulkFinishOrders={finishStackOrders}
       />}
 
       {activeView === "orders" && <OrdersView

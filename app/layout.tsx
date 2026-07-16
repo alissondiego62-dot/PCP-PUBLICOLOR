@@ -24,6 +24,7 @@ import "@/features/dashboard/dashboard-3-2.css";
 import "./release-3-4-1.css";
 import "./release-3-4-2.css";
 import "./release-3-4-3.css";
+import "./release-3-4-4.css";
 import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 import { PwaUpdatePrompt } from "@/components/PwaUpdatePrompt";
 
