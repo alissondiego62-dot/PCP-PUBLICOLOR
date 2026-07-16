@@ -1,0 +1,50 @@
+PUBLICOLOR PCP 3.4.2 — COMO ATUALIZAR
+
+1. FAÇA BACKUP
+- Preserve a pasta .git.
+- Preserve o arquivo .env.local.
+- Gere um backup do Supabase antes de aplicar o SQL em produção.
+
+2. HOMOLOGAÇÃO
+- Execute SQL-ATUALIZACAO-PUBLICOLOR-3.4.2.sql no Supabase de homologação.
+- Execute SQL-VALIDAR-PUBLICOLOR-3.4.2.sql.
+- Confirme database_release = 3.4.2 e nonstandard_purchase_items = 0.
+
+3. SUBSTITUA O PROJETO
+- Extraia o ZIP diretamente na raiz do repositório.
+- Não crie uma pasta externa adicional.
+- Mantenha .git e .env.local existentes.
+
+4. VALIDAÇÃO LOCAL
+Use Node.js 24.x:
+
+corepack enable
+pnpm install --frozen-lockfile
+pnpm validate
+
+5. TESTES OBRIGATÓRIOS
+- adicionar e editar material na OS;
+- editar o mesmo material em Atividades e Compras;
+- conferir atividade automática de compra;
+- mudar setor e status sem botão Salvar;
+- abrir OS e conferir cliente selecionado;
+- testar ícones do Kanban;
+- testar filtro Pausados;
+- editar usuário e consultar histórico de acesso;
+- alterar a matriz de permissões com uma conta administradora;
+- testar em desktop, tablet e celular.
+
+6. PRODUÇÃO
+- Execute o mesmo SQL cumulativo no Supabase de produção.
+- Execute o SQL de validação.
+- Publique o código:
+
+git add -A
+git commit -m "Publicolor 3.4.2: correcoes consolidadas e permissoes"
+git push
+
+7. ATUALIZAÇÃO DO NAVEGADOR
+- Desktop: Ctrl + Shift + R.
+- PWA móvel: feche e abra novamente após o deploy.
+
+Não execute os SQLs antigos depois do SQL cumulativo 3.4.2.

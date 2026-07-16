@@ -4,7 +4,7 @@ import type { AppRole } from "@/lib/pcp-types";
 import {
   getSupabaseAdmin,
   requestOrigin,
-  requireAppUser,
+  requireAppPermission,
   responseMessage,
 } from "@/lib/server/supabase-server";
 
@@ -47,7 +47,7 @@ function invitationErrorMessage(error: { code?: string; message?: string } | nul
 
 export async function POST(request: Request) {
   try {
-    await requireAppUser(request, ["admin"]);
+    const actor = await requireAppPermission(request, "users.manage");
 
     const body = await request.json() as {
       name?: unknown;
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
         invited_at: new Date().toISOString(),
         invite_status: "pending",
       }, { onConflict: "id" })
-      .select("id,name,email,role,active,created_at,last_seen_at,invited_at,invite_status")
+      .select("id,name,email,role,active,created_at,last_seen_at,invited_at,invite_status,display_title,admin_notes")
       .single();
 
     if (profileError || !profile) {
@@ -115,6 +115,14 @@ export async function POST(request: Request) {
       }
       return Response.json({ error: "O convite não pôde ser concluído e o cadastro foi revertido." }, { status: 500 });
     }
+
+    await admin.from("admin_audit_log").insert({
+      actor_id: actor.user.id,
+      action: "user_invited",
+      entity_type: "profile",
+      entity_id: profile.id,
+      metadata: { email: profile.email, name: profile.name, role: profile.role },
+    });
 
     return Response.json({
       ok: true,

@@ -6,6 +6,7 @@ import type { DbStatus, DeadlineFilter, Order, Priority, Sector, SortMode, UiSta
 import { priorityLabel, statusDotClass, statusesForSector, statusToDb } from "@/lib/pcp-config";
 import { dueLabel, initials, shortDateOnlyLabel, targetDateForOrder } from "@/lib/pcp-formatters";
 import { driveThumbnailFileId } from "@/lib/order-thumbnail";
+import { AppIcon } from "@/components/ui/AppIcon";
 
 const UNASSIGNED_RESPONSIBLE_FILTER = "__unassigned__";
 const sortLabels: Record<SortMode, string> = { newest: "Mais recentes", oldest: "Mais antigos", delivery: "Prazo" };
@@ -175,6 +176,7 @@ export type KanbanViewProps = {
   onPreview: (order: Order, url: string) => void;
   onThumbnailVisible: (order: Order) => void;
   onMoveOrder: (order: Order) => void;
+  onChangeStatus: (order: Order) => void;
   onFinishOrder: (order: Order) => void;
 };
 
@@ -188,7 +190,7 @@ export function KanbanView(props: KanbanViewProps) {
     onCloseFilters, onCycleSort, onSectorFilterChange, onStatusFilterChange, onPriorityFilterChange,
     onResponsibleFilterChange, onDeadlineFilterChange, onMetricSelect, onClearFilters, onScrollToSector,
     onTopScroll, onBoardScroll, onDragStart, onDragEnd, onDragOverLane, onDrop, onOpenOrder,
-    onDeleteOrder, onPreview, onThumbnailVisible, onMoveOrder, onFinishOrder,
+    onDeleteOrder, onPreview, onThumbnailVisible, onMoveOrder, onChangeStatus, onFinishOrder,
   } = props;
   const [displayMode, setDisplayMode] = useState<"compact" | "detailed">(() => {
     if (typeof window === "undefined") return "detailed";
@@ -330,15 +332,20 @@ export function KanbanView(props: KanbanViewProps) {
             return <div className={`lane ${dragOverLane === `${sector.id}:${status}` ? "drag-over" : ""}`} key={status} aria-label={`${sector.name} — ${status}`} onDragOver={(event) => { if (!canOperate) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; onDragOverLane(`${sector.id}:${status}`); }} onDrop={() => onDrop(sector.id, status)}>
               <div className="lane-head"><b><i className={`dot ${statusDotClass(status)}`} />{status}</b><span>{laneOrders.length}</span></div>
               {laneOrders.map((order) => <div draggable={canOperate && busyOrderId !== order.id} aria-disabled={!canOperate} onDragStart={(event) => { if (!canOperate) { event.preventDefault(); return; } event.dataTransfer.effectAllowed = "move"; onDragStart(order.id); }} onDragEnd={onDragEnd} onClick={() => onOpenOrder(order, "history")} className={`order ${priorityLabel[order.priority].toLowerCase()} ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-order" : ""} ${order.blocked || order.status === "paused" ? "blocked-order" : ""}`} key={order.id}>
-                {isAdmin && <button type="button" className="delete-order-button" aria-label={`Apagar OP ${order.op_number}`} title="Apagar pedido" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onDeleteOrder(order); }}>⌫</button>}
+                {isAdmin && <button type="button" className="delete-order-button" aria-label={`Apagar OP ${order.op_number}`} title="Apagar pedido" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onDeleteOrder(order); }}><AppIcon name="trash" /></button>}
                 <OrderThumbnail order={order} url={cardImageUrl(order)} onVisible={onThumbnailVisible} onPreview={onPreview} />
                 <div className="order-top"><b>OP {order.op_number}</b><div className="order-badges"><span className={`tag ${priorityLabel[order.priority].toLowerCase()}`}>{priorityLabel[order.priority]}</span>{(order.blocked || order.status === "paused") && <span className="tag blocked">{order.status === "paused" ? "Pausado" : "Bloqueado"}</span>}</div></div>
                 <h3>{order.client_name}</h3><p className="order-service">{order.description}</p>
                 <div className="order-operational-meta"><span>{sectorAgeLabel(order)}</span>{sectorAgeLabel(order).startsWith("2d") || Number(sectorAgeLabel(order).match(/^(\d+)d/)?.[1] || 0) >= 2 ? <b>Sem movimentação</b> : null}</div>
                 <div className="order-responsible" title={`Responsável: ${orderResponsibleName(order)}`}><span>{initials(orderResponsibleName(order))}</span><div><small>RESPONSÁVEL</small><b>{orderResponsibleName(order)}</b></div></div>
                 <div className={`due order-deadlines ${dueLabel(order.delivery_date).startsWith("Atrasado") ? "late" : ""}`}><span>Inst./entrega: <b>{orderTargetDateLabel(order)}</b></span><small>Produção: {dueLabel(order.delivery_date)}</small></div>
-                {canOperate && <div className="workflow-actions"><button type="button" className="move-order-button" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onMoveOrder(order); }}>↪ Mover</button><button type="button" className="finish-order" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onFinishOrder(order); }}>✓ Finalizar</button></div>}
-                <footer className="card-actions"><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "history"); }}>↺ Histórico</button><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "comments"); }}>◌ {commentCounts[order.id] || 0} Comentários</button></footer>
+                <footer className="kanban-card-icon-actions">
+                  <button type="button" title="Histórico" aria-label={`Abrir histórico da OP ${order.op_number}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "history"); }}><AppIcon name="history" /></button>
+                  <button type="button" title="Comentários" aria-label={`Abrir comentários da OP ${order.op_number}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "comments"); }}><AppIcon name="comments" />{Boolean(commentCounts[order.id]) && <span>{commentCounts[order.id]}</span>}</button>
+                  {canOperate && <button type="button" title="Mover setor" aria-label={`Mover OP ${order.op_number} de setor`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onMoveOrder(order); }}><AppIcon name="move" /></button>}
+                  {canOperate && <button type="button" className={`status-${order.status}`} title="Alterar status" aria-label={`Alterar status da OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onChangeStatus(order); }}><AppIcon name={order.status === "paused" ? "pause" : "status"} /></button>}
+                  {canOperate && <button type="button" className="finish-icon" title="Finalizar ordem" aria-label={`Finalizar OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onFinishOrder(order); }}><AppIcon name="check" /></button>}
+                </footer>
               </div>)}
               {!laneOrders.length && <div className="empty-lane">{canOperate ? "Solte um pedido aqui" : "Nenhum pedido"}</div>}
             </div>;

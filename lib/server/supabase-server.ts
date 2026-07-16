@@ -76,6 +76,19 @@ export async function requireAppUser(
   };
 }
 
+export async function requireAppPermission(request: Request, permissionKey: string): Promise<AuthorizedAppUser> {
+  const actor = await requireAppUser(request);
+  if (actor.role === "admin") return actor;
+  const admin = getSupabaseAdmin();
+  const [{ data: override }, { data: rolePermission }] = await Promise.all([
+    admin.from("user_permission_overrides").select("allowed").eq("user_id", actor.user.id).eq("permission_key", permissionKey).maybeSingle(),
+    admin.from("role_permissions").select("allowed").eq("role", actor.role).eq("permission_key", permissionKey).maybeSingle(),
+  ]);
+  const allowed = override?.allowed ?? rolePermission?.allowed ?? false;
+  if (!allowed) throw new Response("Você não possui permissão para esta operação.", { status: 403 });
+  return actor;
+}
+
 export function responseMessage(error: unknown, fallback = "Não foi possível concluir a operação.") {
   if (error instanceof Response) return error;
   const message = error instanceof Error ? error.message : fallback;

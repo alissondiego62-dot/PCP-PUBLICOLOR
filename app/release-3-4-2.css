@@ -1,0 +1,127 @@
+/* Publicolor PCP 3.4.2 · correções consolidadas */
+:root { --pcp-touch: 42px; }
+.modal, .modal * { box-sizing: border-box; min-width: 0; }
+.modal input, .modal select, .modal textarea, .modal button { max-width: 100%; }
+.modal-actions { display:flex; flex-wrap:wrap; gap:10px; justify-content:flex-end; }
+
+/* Materiais: campos nunca disputam espaço com o botão. */
+.simplified-material-form { display:block !important; width:100%; overflow:hidden; }
+.simplified-material-fields { display:grid; grid-template-columns:minmax(220px,2fr) minmax(100px,.7fr) minmax(110px,.8fr) minmax(160px,1fr) minmax(220px,1.5fr); gap:10px; align-items:end; }
+.simplified-material-fields label { min-width:0; }
+.simplified-material-fields input,.simplified-material-fields select { width:100%; min-width:0; }
+.simplified-material-actions { display:flex; justify-content:flex-end; margin-top:12px; padding-top:12px; border-top:1px solid #eadff0; }
+.simplified-material-actions button { min-height:44px; white-space:normal; padding-inline:22px; }
+.material-availability-row { min-width:0; }
+.material-copy,.material-purchase-state { min-width:0; overflow-wrap:anywhere; }
+.material-row-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+
+/* Produção com salvamento automático. */
+.production-autosave-panel { display:grid; gap:16px; }
+.production-autosave-state { margin-right:auto; font-size:12px; color:#6a5c70; }
+.production-autosave-state.saving { color:#6d1d84; }
+.production-autosave-state.saved { color:#24745d; font-weight:700; }
+.production-autosave-state.error { color:#b52c35; font-weight:700; }
+
+/* Ações rápidas do Kanban. */
+.kanban-card-icon-actions { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; padding-top:10px; margin-top:10px; border-top:1px solid #eee4f1; }
+.kanban-card-icon-actions button { position:relative; display:grid; place-items:center; min-width:0; min-height:var(--pcp-touch); border:1px solid #dfd1e6; border-radius:9px; background:#fff; color:#5b266c; cursor:pointer; }
+.kanban-card-icon-actions button:hover { background:#f7effa; border-color:#b98bc8; }
+.kanban-card-icon-actions button:disabled { opacity:.45; cursor:not-allowed; }
+.kanban-card-icon-actions .finish-icon { background:#ebf8f3; color:#1e7159; border-color:#b7dfd1; }
+.kanban-card-icon-actions button > span { position:absolute; top:-5px; right:-4px; min-width:17px; height:17px; padding:0 4px; border-radius:999px; background:#7b258f; color:#fff; font-size:9px; display:grid; place-items:center; }
+.quick-action-overlay { align-items:center; justify-content:center; }
+.quick-action-sheet { width:min(520px,calc(100vw - 24px)); max-height:min(720px,calc(100dvh - 28px)); overflow:auto; }
+.quick-action-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:18px; }
+.quick-action-options button { display:flex; align-items:center; gap:10px; min-height:48px; padding:10px 12px; text-align:left; border:1px solid #e1d4e6; border-radius:10px; background:#fff; }
+.quick-action-options button span { flex:1; }
+.quick-action-options button.current { background:#f6eff8; color:#6d1d84; }
+.quick-action-options button small { font-size:10px; color:#6d1d84; }
+.quick-action-saving { margin-top:12px; color:#6d1d84; font-weight:700; }
+
+/* Usuários. */
+.users-v342 .users-panel { overflow:hidden; }
+.users-v342 .users-panel > header { display:flex; gap:16px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; }
+.users-v342 .new-user-button { display:inline-flex; gap:8px; align-items:center; }
+.users-list { display:grid; }
+.user-v342-card { display:grid; grid-template-columns:minmax(220px,1.3fr) minmax(360px,1.5fr) auto; align-items:center; gap:18px; padding:16px; border-top:1px solid #eee6f0; }
+.user-identity { display:grid; gap:3px; min-width:0; }
+.user-identity b,.user-identity small,.user-identity em { overflow-wrap:anywhere; }
+.user-identity em { font-style:normal; color:#6e5d73; font-size:12px; }
+.user-identity > span { width:max-content; padding:3px 7px; border-radius:999px; background:#e7f6ef; color:#21735c; font-size:10px; }
+.user-identity > span[data-status="inactive"] { background:#f6e7e9; color:#9f2932; }
+.user-access-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.user-access-summary span { display:grid; gap:3px; min-width:0; }
+.user-access-summary small { color:#76677b; }
+.user-access-summary b { font-size:12px; overflow-wrap:anywhere; }
+.user-v342-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.user-v342-actions button { display:grid; place-items:center; width:var(--pcp-touch); height:var(--pcp-touch); border:1px solid #dfd3e4; border-radius:9px; background:#fff; }
+.user-edit-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.user-edit-grid label { display:grid; gap:6px; }
+.user-edit-grid .wide { grid-column:1/-1; }
+.user-active-check { align-content:center; grid-template-columns:auto 1fr !important; }
+.user-access-modal { width:min(760px,calc(100vw - 24px)); max-height:calc(100dvh - 28px); overflow:auto; }
+.access-history-list { display:grid; gap:8px; }
+.access-history-list article { display:grid; grid-template-columns:minmax(180px,.8fr) 1fr; gap:16px; padding:12px; border:1px solid #e8dfea; border-radius:10px; }
+.access-history-list article > div { display:grid; gap:4px; }
+.access-history-list small,.access-history-list span { color:#6e6172; font-size:12px; }
+
+/* Permissões. */
+.permissions-settings-card { background:#fff; border:1px solid #e6dce9; border-radius:14px; padding:18px; }
+.permissions-settings-card > header { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+.permissions-header-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.permissions-header-actions button { display:inline-flex; align-items:center; gap:7px; }
+.permissions-message { margin:14px 0; padding:10px 12px; border-radius:9px; background:#f4edf7; color:#5f2670; }
+.permissions-matrix-wrap { overflow:auto; margin-top:16px; border:1px solid #eadfec; border-radius:12px; }
+.permissions-matrix { width:100%; min-width:840px; border-collapse:collapse; }
+.permissions-matrix th,.permissions-matrix td { padding:11px 12px; border-bottom:1px solid #eee6f0; text-align:center; }
+.permissions-matrix th:first-child,.permissions-matrix td:first-child { text-align:left; min-width:330px; }
+.permissions-matrix td:first-child b,.permissions-matrix td:first-child small { display:block; }
+.permissions-matrix td:first-child small { margin-top:3px; color:#746779; }
+.permissions-module-row th { background:#f6f2f7; color:#5d2b69; text-transform:uppercase; font-size:11px; letter-spacing:.08em; }
+.permission-switch { display:inline-block; position:relative; width:42px; height:24px; }
+.permission-switch input { position:absolute; opacity:0; }
+.permission-switch span { display:block; width:100%; height:100%; border-radius:999px; background:#d8cfdc; cursor:pointer; transition:.18s; }
+.permission-switch span::after { content:""; display:block; width:18px; height:18px; border-radius:50%; background:#fff; transform:translate(3px,3px); transition:.18s; box-shadow:0 1px 4px #0002; }
+.permission-switch input:checked + span { background:#6d1d84; }
+.permission-switch input:checked + span::after { transform:translate(21px,3px); }
+.permission-switch.locked { opacity:.7; }
+
+/* Compras manuais usam o mesmo editor compacto. */
+.manual-purchase-pricing { width:100%; }
+.activity-editor-purchase-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.activity-editor-purchase-fields label { display:grid; gap:6px; }
+
+@media (max-width:1100px) {
+  .simplified-material-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .simplified-material-fields label:first-child,.simplified-material-fields label:last-child { grid-column:1/-1; }
+  .user-v342-card { grid-template-columns:minmax(180px,1fr) minmax(300px,1.5fr); }
+  .user-v342-actions { grid-column:1/-1; justify-content:flex-end; }
+}
+@media (max-width:768px) {
+  .simplified-material-fields { grid-template-columns:1fr; }
+  .simplified-material-fields label:first-child,.simplified-material-fields label:last-child { grid-column:auto; }
+  .simplified-material-actions button { width:100%; }
+  .quick-action-overlay { align-items:flex-end; }
+  .quick-action-sheet { width:100%; max-width:none; border-radius:18px 18px 0 0; max-height:88dvh; margin:0; }
+  .quick-action-options { grid-template-columns:1fr; }
+  .user-v342-card { grid-template-columns:1fr; gap:12px; }
+  .user-access-summary { grid-template-columns:1fr 1fr; }
+  .user-v342-actions { grid-column:auto; justify-content:flex-start; }
+  .users-filter-bar { display:grid !important; grid-template-columns:1fr !important; }
+  .users-role-matrix { display:grid !important; grid-template-columns:1fr 1fr !important; }
+  .user-edit-grid,.activity-editor-purchase-fields { grid-template-columns:1fr; }
+  .access-history-list article { grid-template-columns:1fr; }
+  .settings-tabs { overflow-x:auto; flex-wrap:nowrap !important; scroll-snap-type:x proximity; }
+  .settings-tabs button { flex:0 0 auto; scroll-snap-align:start; }
+}
+@media (max-width:480px) {
+  .kanban-card-icon-actions button { min-height:44px; }
+  .user-access-summary,.users-role-matrix { grid-template-columns:1fr !important; }
+  .permissions-settings-card { padding:12px; }
+}
+.user-permissions-modal { width:min(820px,calc(100vw - 24px)); max-height:calc(100dvh - 28px); overflow:auto; }
+.user-override-list { display:grid; gap:6px; margin:16px 0; }
+.user-override-list label { display:grid; grid-template-columns:minmax(260px,1fr) minmax(170px,.45fr); align-items:center; gap:12px; padding:10px 12px; border:1px solid #ebe1ee; border-radius:9px; }
+.user-override-list label span { display:grid; gap:2px; }
+.user-override-list small { color:#75697a; }
+@media(max-width:620px){.user-override-list label{grid-template-columns:1fr}.user-override-list select{width:100%}}

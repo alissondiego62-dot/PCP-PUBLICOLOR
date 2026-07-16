@@ -36,7 +36,7 @@ export function statusDotClass(status: UiStatus) {
 export const roleLabel: Record<AppRole, string> = {
   admin: "Administrador",
   manager: "Gerente",
-  production: "Produção",
+  production: "Operador",
   viewer: "Visualizador",
 };
 

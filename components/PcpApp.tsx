@@ -49,6 +49,7 @@ import { driveAuthenticatedJson, uploadFileToOrderDrive, type DriveConnectionSta
 import { requiresAutomaticOrderNumber } from "@/lib/order-number";
 import { buildDriveThumbnailPath, driveThumbnailFileId } from "@/lib/order-thumbnail";
 import { MoveOrderModal } from "@/features/kanban/MoveOrderModal";
+import { ChangeOrderStatusModal } from "@/features/kanban/ChangeOrderStatusModal";
 import { OfflineModeBanner } from "@/components/OfflineModeBanner";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { usePcpRealtime } from "@/hooks/usePcpRealtime";
@@ -62,6 +63,7 @@ import { AppIcon } from "@/components/ui/AppIcon";
 import { MaterialEditorModal } from "@/components/MaterialEditorModal";
 import { ORDER_MATERIAL_COLUMNS, type MaterialEditorSubmission } from "@/lib/order-materials";
 import type { KanbanMetricKey } from "@/features/kanban/KanbanView";
+import { useAppPermissions } from "@/hooks/useAppPermissions";
 
 const DashboardView = lazy(() => import("@/features/dashboard/DashboardView").then((module) => ({ default: module.DashboardView })));
 const KanbanView = lazy(() => import("@/features/kanban/KanbanView").then((module) => ({ default: module.KanbanView })));
@@ -277,6 +279,9 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   const [reopeningOrder, setReopeningOrder] = useState(false);
   const [reopenError, setReopenError] = useState("");
   const [moveOrderTarget, setMoveOrderTarget] = useState<Order | null>(null);
+  const [statusOrderTarget, setStatusOrderTarget] = useState<Order | null>(null);
+  const [summaryClientId, setSummaryClientId] = useState("");
+  const [productionFeedback, setProductionFeedback] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [usingOfflineSnapshot, setUsingOfflineSnapshot] = useState(false);
   const [offlineSnapshotAt, setOfflineSnapshotAt] = useState<string | null>(null);
   const [dragOverLane, setDragOverLane] = useState<string | null>(null);
@@ -328,6 +333,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   const imagePathsRef = useRef<Record<string, string>>({});
   const thumbnailRequestsRef = useRef<Set<string>>(new Set());
   const thumbnailBackgroundGenerationRef = useRef(0);
+  const accessLogIdRef = useRef<string | null>(null);
   const [boardScrollWidth, setBoardScrollWidth] = useState(0);
   const isOnline = useOnlineStatus();
   useObservability();
@@ -583,6 +589,23 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   }, [user?.id, isOnline]);
 
   useEffect(() => {
+    if (!user?.id || !isOnline) return;
+    let active = true;
+    const key = `pcp-access-log:${user.id}`;
+    const existing = window.sessionStorage.getItem(key);
+    const deviceLabel = /Mobile|Android|iPhone|iPad/i.test(navigator.userAgent) ? "Dispositivo móvel" : "Computador";
+    const register = async () => {
+      if (existing) { accessLogIdRef.current = existing; await supabase.rpc("touch_my_access", { p_access_id: existing }); return; }
+      const { data } = await supabase.rpc("record_my_access", { p_user_agent: navigator.userAgent, p_platform: navigator.platform || null, p_device_label: deviceLabel });
+      const id = typeof data === "string" ? data : Array.isArray(data) ? data[0] : null;
+      if (active && id) { accessLogIdRef.current = id; window.sessionStorage.setItem(key, id); }
+    };
+    void register();
+    const timer = window.setInterval(() => { if (accessLogIdRef.current) void supabase.rpc("touch_my_access", { p_access_id: accessLogIdRef.current }); }, 5 * 60 * 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [user?.id, isOnline]);
+
+  useEffect(() => {
     if (!user) return;
     let active = true;
 
@@ -663,7 +686,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         activeOrdersQuery,
         completedOrdersQuery,
         needsCommentCounts ? fetchOrderCommentCounts() : Promise.resolve({ counts: {}, error: null }),
-        supabase.from("profiles").select("id,name,email,role,active,created_at,last_seen_at,invited_at,invite_status").order("name"),
+        supabase.from("profiles").select("id,name,email,role,active,created_at,last_seen_at,invited_at,invite_status,display_title,admin_notes").order("name"),
         needsClients ? supabase.from("clients").select("*").order("name").limit(1000) : emptyResult,
       ]);
       if (!active) return;
@@ -792,9 +815,36 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     [profiles, user?.id],
   );
   const profilesById = useMemo(() => new Map(profiles.map((profile) => [profile.id, profile])), [profiles]);
+
+  useEffect(() => {
+    if (!modal || modal === "new") { setSummaryClientId(""); return; }
+    if (modal.client_id && clients.some((client) => client.id === modal.client_id)) { setSummaryClientId(modal.client_id); return; }
+    const normalize = (value: string | null | undefined) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleUpperCase("pt-BR");
+    const target = normalize(modal.client_name);
+    const matches = clients.filter((client) => [client.name, client.trade_name].some((value) => normalize(value) === target));
+    setSummaryClientId(matches.length === 1 ? matches[0].id : "");
+  }, [clients, modal]);
   const isAdmin = currentProfile?.role === "admin";
-  const roleCanOperate = isAdmin || currentProfile?.role === "manager" || currentProfile?.role === "production";
-  const canOperate = Boolean(roleCanOperate && isOnline);
+  const { has: hasPermission } = useAppPermissions({ userId: user?.id, role: currentProfile?.role, active: currentProfile?.active, online: isOnline });
+  const canViewDashboard = isAdmin || hasPermission("dashboard.view");
+  const canViewProduction = isAdmin || hasPermission("production.view");
+  const canMoveProduction = Boolean(isOnline && (isAdmin || hasPermission("production.move")));
+  const canViewOrders = isAdmin || hasPermission("orders.view");
+  const canCreateOrders = Boolean(isOnline && (isAdmin || hasPermission("orders.create")));
+  const canEditOrders = Boolean(isOnline && (isAdmin || hasPermission("orders.edit")));
+  const canFinalizeOrders = Boolean(isOnline && (isAdmin || hasPermission("orders.finalize")));
+  const canDeleteOrders = Boolean(isOnline && (isAdmin || hasPermission("orders.delete")));
+  const canEditMaterials = Boolean(isOnline && (isAdmin || hasPermission("materials.edit")));
+  const canViewActivities = isAdmin || hasPermission("activities.view");
+  const canManageActivities = Boolean(isOnline && (isAdmin || hasPermission("activities.manage")));
+  const canEditPurchasePrices = Boolean(isOnline && (isAdmin || hasPermission("purchases.prices")));
+  const canManageAgenda = Boolean(isOnline && (isAdmin || hasPermission("agenda.manage")));
+  const canViewClients = isAdmin || hasPermission("clients.view");
+  const canManageClients = Boolean(isOnline && (isAdmin || hasPermission("clients.manage")));
+  const canViewUsers = isAdmin || hasPermission("users.view");
+  const canManageUsers = Boolean(isOnline && (isAdmin || hasPermission("users.manage")));
+  const canViewSettings = isAdmin || hasPermission("settings.view");
+  const canOperate = Boolean(isOnline && (canMoveProduction || canEditOrders || canEditMaterials || canManageActivities || canManageAgenda || canManageClients));
 
   useEffect(() => {
     if (!user || !authReady) return;
@@ -806,13 +856,26 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     }
   }, [authReady, user]);
 
-  useEffect(() => {
-    if (!currentProfile || isAdmin || (activeView !== "settings" && activeView !== "users")) return;
-    window.history.replaceState({ view: "kanban" }, "", pathForView("kanban"));
-    setActiveView("kanban");
-  }, [activeView, currentProfile, isAdmin]);
+  const viewAllowed = useCallback((view: ViewKey) => {
+    if (view === "dashboard") return canViewDashboard;
+    if (view === "kanban") return canViewProduction;
+    if (view === "orders" || view === "completed") return canViewOrders;
+    if (view === "installation") return isAdmin || hasPermission("agenda.view");
+    if (view === "activities") return canViewActivities;
+    if (view === "clients") return canViewClients;
+    if (view === "users") return canViewUsers;
+    if (view === "settings") return canViewSettings;
+    return false;
+  }, [canViewActivities, canViewClients, canViewDashboard, canViewOrders, canViewProduction, canViewSettings, canViewUsers, hasPermission, isAdmin]);
 
-  const showOrderActions = canOperate && activeView === "orders";
+  useEffect(() => {
+    if (!currentProfile || viewAllowed(activeView)) return;
+    const fallback: ViewKey = canViewDashboard ? "dashboard" : canViewProduction ? "kanban" : canViewOrders ? "orders" : "clients";
+    window.history.replaceState({ view: fallback }, "", pathForView(fallback));
+    setActiveView(fallback);
+  }, [activeView, canViewDashboard, canViewOrders, canViewProduction, currentProfile, viewAllowed]);
+
+  const showOrderActions = canCreateOrders && activeView === "orders";
   const canUploadFiles = Boolean(currentProfile?.active && isOnline);
   const storeOrderThumbnailUrl = useCallback((orderId: string, path: string, url: string) => {
     setImageUrls((current) => {
@@ -1247,7 +1310,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   const largestSectorCount = Math.max(1, ...sectorReport.map((item) => item.count));
 
   function navigateTo(view: ViewKey) {
-    if ((view === "settings" || view === "users") && !isAdmin) return;
+    if (!viewAllowed(view)) return;
     const nextPath = pathForView(view);
     if (window.location.pathname !== nextPath) window.history.pushState({ view }, "", nextPath);
     setActiveView(view);
@@ -1387,7 +1450,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
 
     if (detailsError) {
       const schemaHint = tab === "materials" && /column|schema cache|availability|unit_price|purchase_status/i.test(detailsError.message)
-        ? " O banco conectado ainda não possui a estrutura completa de Materiais e Compras. Execute o SQL cumulativo 3.4.1 e atualize a página."
+        ? " O banco conectado ainda não possui a estrutura completa de Materiais e Compras. Execute o SQL cumulativo 3.4.2 e atualize a página."
         : "";
       setDetailError(`Não foi possível carregar esta aba da OS: ${detailsError.message}.${schemaHint}`);
     } else {
@@ -1563,7 +1626,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     await updateOrder(order, {
       op_number: nextOpNumber,
       client_id: clientId || null,
-      client_name: client ? (client.trade_name || client.name) : String(form.get("client_name") || "").trim(),
+      client_name: client ? (client.trade_name || client.name) : String(form.get("client_name") || order.client_name || "").trim(),
       description: String(form.get("description") || "").trim(),
       installation_scheduled_at: installationDateToIso(targetDate, order.installation_scheduled_at),
       delivery_date: previousBusinessDay(targetDate),
@@ -1577,20 +1640,19 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     await loadOrderDetails(order.id, true);
   }
 
-  async function saveProductionDetails(event: FormEvent<HTMLFormElement>, order: Order) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const nextSectorId = String(form.get("sector_id") || order.sector_id);
+  async function changeProductionField(order: Order, field: "sector_id" | "status", value: string) {
+    if (!canMoveProduction || busyOrderId) return;
+    const nextSectorId = field === "sector_id" ? value : order.sector_id;
     const nextSectorName = activeSectors.find((sector) => sector.id === nextSectorId)?.name || "";
-    let nextStatus = String(form.get("status") || order.status) as DbStatus;
+    let nextStatus = (field === "status" ? value : order.status) as DbStatus;
     const pcpSpecificStatus = nextStatus === "in_transport" || nextStatus === "waiting_client";
     if (!isPcpSectorName(nextSectorName) && pcpSpecificStatus) nextStatus = "waiting";
     if (isPcpSectorName(nextSectorName) && nextStatus === "in_progress") nextStatus = "waiting";
-    await updateOrder(order, {
-      sector_id: nextSectorId,
-      status: nextStatus,
-    }, "Dados da produção atualizados e registrados no histórico.");
-    await loadOrderDetails(order.id, true);
+    setProductionFeedback("saving");
+    const ok = await updateOrder(order, { sector_id: nextSectorId, status: nextStatus }, field === "sector_id" ? "Setor atualizado automaticamente." : "Status atualizado automaticamente.");
+    setProductionFeedback(ok ? "saved" : "error");
+    if (ok) await loadOrderDetails(order.id, true);
+    window.setTimeout(() => setProductionFeedback("idle"), 2500);
   }
 
   async function addComment(event: FormEvent<HTMLFormElement>) {
@@ -1616,7 +1678,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
 
   async function addMaterial(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!modal || modal === "new" || !canOperate || workspaceBusy) return;
+    if (!modal || modal === "new" || !canEditMaterials || workspaceBusy) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const materialName = String(form.get("material_name") || "").trim();
@@ -1654,7 +1716,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   }
 
   async function updateMaterialAvailability(material: OrderMaterial, availability: OrderMaterial["availability"]) {
-    if (!canOperate || workspaceBusy || material.availability === availability) return;
+    if (!canEditMaterials || workspaceBusy || material.availability === availability) return;
     setWorkspaceBusy(true);
     setDetailError("");
 
@@ -1675,13 +1737,13 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   }
 
   function editMaterial(material: OrderMaterial) {
-    if (!canOperate || workspaceBusy) return;
+    if (!canEditMaterials || workspaceBusy) return;
     setDetailError("");
     setMaterialEditor(material);
   }
 
   async function saveMaterialEditor(submission: MaterialEditorSubmission) {
-    if (!materialEditor || !canOperate || workspaceBusy) return;
+    if (!materialEditor || !canEditMaterials || workspaceBusy) return;
     setWorkspaceBusy(true);
     setDetailError("");
     try {
@@ -1725,7 +1787,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
 
 
   async function deleteMaterial(material: OrderMaterial) {
-    if (!canOperate || workspaceBusy) return;
+    if (!canEditMaterials || workspaceBusy) return;
     const hasOpenPurchase = material.purchase_activity_id && material.purchase_status !== "finalized";
     const confirmation = hasOpenPurchase
       ? `Remover ${material.material_name} desta OS e cancelar a atividade de compra vinculada?`
@@ -1751,7 +1813,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   }
 
   async function createDefaultChecklist() {
-    if (!modal || modal === "new" || !canOperate || workspaceBusy) return;
+    if (!modal || modal === "new" || !canEditOrders || workspaceBusy) return;
     const defaults = [
       ["Pré-produção", "Medidas conferidas"], ["Pré-produção", "Arte aprovada pelo cliente"],
       ["Materiais", "Materiais disponíveis ou reservados"], ["Produção", "Arquivo pronto para produção"],
@@ -1766,7 +1828,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
 
   async function addChecklistItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!modal || modal === "new" || !canOperate || workspaceBusy) return;
+    if (!modal || modal === "new" || !canEditOrders || workspaceBusy) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     setWorkspaceBusy(true);
@@ -1777,7 +1839,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   }
 
   async function toggleChecklistItem(item: ChecklistItem) {
-    if (!canOperate || workspaceBusy) return;
+    if (!canEditOrders || workspaceBusy) return;
     setWorkspaceBusy(true);
     const completed = !item.completed;
     const { error: checklistError } = await supabase.from("order_checklist_items").update({ completed, completed_at: completed ? new Date().toISOString() : null }).eq("id", item.id);
@@ -1945,6 +2007,13 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     }
   }
 
+  async function signOutApp() {
+    if (accessLogIdRef.current) await supabase.rpc("close_my_access", { p_access_id: accessLogIdRef.current });
+    if (user?.id) window.sessionStorage.removeItem(`pcp-access-log:${user.id}`);
+    accessLogIdRef.current = null;
+    await supabase.auth.signOut();
+  }
+
   async function requestPasswordReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthBusy(true);
@@ -2087,7 +2156,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   }
 
   async function move(sectorId: string, status: UiStatus) {
-    if (!canOperate || !dragged) return;
+    if (!canMoveProduction || !dragged) return;
     const orderId = dragged;
     const previous = orders.find((order) => order.id === orderId);
     setDragOverLane(null);
@@ -2097,26 +2166,33 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     await updateOrder(previous, { sector_id: sectorId, status: nextStatus }, "Pedido movimentado e histórico atualizado.");
   }
 
-  async function moveSelectedOrder(sectorId: string, status: UiStatus) {
-    if (!moveOrderTarget || !canOperate) return;
+  async function moveSelectedOrder(sectorId: string) {
+    if (!moveOrderTarget || !canMoveProduction) return;
     const target = moveOrderTarget;
-    const moved = await updateOrder(
-      target,
-      { sector_id: sectorId, status: statusToDb[status] },
-      "Pedido movimentado e histórico atualizado.",
-    );
+    const sectorName = activeSectors.find((sector) => sector.id === sectorId)?.name || "";
+    let nextStatus = target.status;
+    if (!isPcpSectorName(sectorName) && (nextStatus === "in_transport" || nextStatus === "waiting_client")) nextStatus = "waiting";
+    if (isPcpSectorName(sectorName) && nextStatus === "in_progress") nextStatus = "waiting";
+    const moved = await updateOrder(target, { sector_id: sectorId, status: nextStatus }, "Pedido movimentado e histórico atualizado.");
     if (moved) setMoveOrderTarget(null);
   }
 
+  async function changeSelectedOrderStatus(status: DbStatus) {
+    if (!statusOrderTarget || !canMoveProduction) return;
+    const target = statusOrderTarget;
+    const changed = await updateOrder(target, { status }, "Status atualizado e histórico registrado.");
+    if (changed) setStatusOrderTarget(null);
+  }
+
   async function finishOrder(order: Order) {
-    if (!canOperate) return;
+    if (!canFinalizeOrders) return;
     if (!window.confirm(`Finalizar a OP ${order.op_number}? O pedido sairá do Kanban ativo.`)) return;
     await updateOrder(order, { status: "completed", completed_at: new Date().toISOString(), blocked: false }, "Pedido finalizado e enviado para Concluídos.");
   }
 
   async function reopenCompletedOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!reopenOrderTarget || !canOperate || reopeningOrder) return;
+    if (!reopenOrderTarget || !canFinalizeOrders || reopeningOrder) return;
 
     const form = new FormData(event.currentTarget);
     const observation = String(form.get("observation") || "").trim();
@@ -2161,7 +2237,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   }
 
   async function deleteOrder(order: Order) {
-    if (!isAdmin || busyOrderId) return;
+    if (!canDeleteOrders || busyOrderId) return;
     if (!window.confirm(`Apagar definitivamente a OP ${order.op_number}? Esta operação também removerá o histórico e os comentários e não poderá ser desfeita.`)) return;
     setBusyOrderId(order.id);
     setError("");
@@ -2189,7 +2265,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
 
   async function scheduleInstallation(event: FormEvent<HTMLFormElement>, order: Order) {
     event.preventDefault();
-    if (!canOperate) return;
+    if (!canManageAgenda) return;
     const value = String(new FormData(event.currentTarget).get("scheduled_at") || "");
     if (!value) return;
     const scheduledAt = installationLocalToIso(value);
@@ -2204,7 +2280,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
 
   async function saveInstallationDetails(event: FormEvent<HTMLFormElement>, order: Order) {
     event.preventDefault();
-    if (!canOperate || busyOrderId === order.id) return;
+    if (!canManageAgenda || busyOrderId === order.id) return;
 
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
@@ -2247,7 +2323,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
 
 
   async function bulkUpdateOrders(orderIds: string[], patch: { consultant_name?: string | null; priority?: Priority }) {
-    if (!canOperate || !user?.id || !orderIds.length) return false;
+    if (!canEditOrders || !user?.id || !orderIds.length) return false;
     setError("");
     const normalizedPatch = { ...patch };
     if (normalizedPatch.consultant_name === "__none__") normalizedPatch.consultant_name = null;
@@ -2276,7 +2352,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   }
 
   async function changeUserRole(profile: Profile, nextRole: AppRole) {
-    if (!isAdmin || profile.id === user?.id || profileBusyId) return;
+    if (!canManageUsers || profile.id === user?.id || profileBusyId) return;
     setProfileBusyId(profile.id);
     setError("");
     try {
@@ -2299,8 +2375,24 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     }
   }
 
+  async function editUser(profile: Profile, patch: { name: string; role: AppRole; active: boolean; display_title: string | null; admin_notes: string | null }) {
+    if (!canManageUsers || profileBusyId) return;
+    setProfileBusyId(profile.id); setError("");
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error("Sua sessão expirou. Entre novamente no sistema.");
+      const response = await fetch("/api/admin/users/manage", { method: "POST", headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" }, body: JSON.stringify({ user_id: profile.id, email: profile.email, action: "edit_profile", ...patch }) });
+      const payload = await response.json().catch(() => ({})) as { ok?: boolean; user?: Profile; message?: string; error?: string };
+      if (!response.ok || !payload.ok || !payload.user) throw new Error(payload.error || "Não foi possível editar o usuário.");
+      setProfiles((current) => current.map((item) => item.id === profile.id ? payload.user as Profile : item));
+      showNotice(payload.message || "Usuário atualizado.");
+    } catch (editError) { setError(editError instanceof Error ? editError.message : "Não foi possível editar o usuário."); }
+    finally { setProfileBusyId(null); }
+  }
+
   async function manageUser(profile: Profile, action: "activate" | "deactivate" | "resend_invite" | "cancel_invite") {
-    if (!isAdmin || profileBusyId) return;
+    if (!canManageUsers || profileBusyId) return;
     setProfileBusyId(profile.id);
     setError("");
     try {
@@ -2325,7 +2417,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!isAdmin || creatingUser) return;
+    if (!canManageUsers || creatingUser) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const name = String(form.get("name") || "").trim();
@@ -2440,7 +2532,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
 
   async function saveClient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canOperate || clientBusy) return;
+    if (!canManageClients || clientBusy) return;
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const name = String(form.get("name") || "").trim();
@@ -2508,7 +2600,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   }
 
   async function addOrders(submission: OrderBatchSubmission) {
-    if (!canOperate) {
+    if (!canCreateOrders) {
       setError("Seu perfil não pode cadastrar pedidos.");
       return false;
     }
@@ -2745,12 +2837,12 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   return <main className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} data-active-view={activeView}>
     <aside className={`sidebar ${sidebarOpen ? "open" : ""} ${sidebarCollapsed ? "collapsed" : ""}`}>
       <div className="brand"><span className="brand-logo"><img src="/publicolor-logo.png" alt="Publicolor" /></span><div><b>Publicolor</b><small>PCP · Controle da produção</small></div><button type="button" className="sidebar-collapse-button" aria-label={sidebarCollapsed ? "Expandir menu lateral" : "Recolher menu lateral"} title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"} onClick={() => setSidebarCollapsed((value) => !value)}>{sidebarCollapsed ? "»" : "«"}</button></div>
-      <nav>{menuItems.map((item) => <button type="button" key={item.key} className={activeView === item.key ? "active" : ""} onClick={() => navigateTo(item.key)}><i><AppIcon name={item.icon}/></i><span>{item.label}</span></button>)}{isAdmin && <button type="button" className={activeView === "users" ? "active" : ""} onClick={() => navigateTo("users")}><i><AppIcon name="users"/></i><span>Usuários</span></button>}</nav>
-      <div className="side-bottom">{isAdmin && <button type="button" className={`side-link ${activeView === "settings" ? "active" : ""}`} onClick={() => navigateTo("settings")}><i><AppIcon name="settings"/></i><span>Configurações</span></button>}<button type="button" className="logout" onClick={() => void supabase.auth.signOut()}>Sair</button><div className="user"><i>{initials(user.email)}</i><span><b>{user.email?.split("@")[0]}</b><small>{currentProfile ? roleLabel[currentProfile.role] : "Carregando acesso…"}</small></span></div></div>
+      <nav>{menuItems.filter((item) => viewAllowed(item.key)).map((item) => <button type="button" key={item.key} className={activeView === item.key ? "active" : ""} onClick={() => navigateTo(item.key)}><i><AppIcon name={item.icon}/></i><span>{item.label}</span></button>)}{canViewUsers && <button type="button" className={activeView === "users" ? "active" : ""} onClick={() => navigateTo("users")}><i><AppIcon name="users"/></i><span>Usuários</span></button>}</nav>
+      <div className="side-bottom">{canViewSettings && <button type="button" className={`side-link ${activeView === "settings" ? "active" : ""}`} onClick={() => navigateTo("settings")}><i><AppIcon name="settings"/></i><span>Configurações</span></button>}<button type="button" className="logout" onClick={() => void signOutApp()}><AppIcon name="logout"/><span>Sair</span></button><div className="user"><i>{initials(user.email)}</i><span><b>{user.email?.split("@")[0]}</b><small>{currentProfile ? roleLabel[currentProfile.role] : "Carregando acesso…"}</small></span></div></div>
     </aside>
     {sidebarOpen && <button type="button" className="sidebar-backdrop" aria-label="Fechar menu" onClick={() => setSidebarOpen(false)} />}
     <section className="content">
-      <header><div className="page-heading"><button type="button" className="mobile-menu-button" aria-label="Abrir menu" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}><AppIcon name="menu" /></button><div><p className="eyebrow">{viewMeta[activeView].eyebrow}</p><h1>{viewMeta[activeView].title}</h1><p>{viewMeta[activeView].description}</p></div></div><div className="header-actions"><div className="header-utility-actions"><button type="button" className="header-utility-button" onClick={() => setGlobalSearchOpen(true)} aria-label="Busca global"><AppIcon name="search"/><span>Buscar</span><kbd>Ctrl K</kbd></button><button type="button" className="header-utility-button" onClick={() => setPendingCenterOpen(true)} aria-label="Central de pendências"><AppIcon name="alert"/><span>Pendências</span>{immediatePendingCount > 0 && <b className="utility-count">{immediatePendingCount}</b>}</button></div><span className={`sync-status ${isOnline ? "" : "offline"}`}>{isOnline ? "● Conectado" : "○ Offline"}</span>{currentProfile && <span className="role-badge" data-role={isAdmin ? "admin" : roleCanOperate ? "operator" : "user"}>{roleLabel[currentProfile.role]}</span>}{showOrderActions && <div className="header-order-actions" aria-label="Ações exclusivas da página de pedidos"><button type="button" className="pdf-import-header-button" onClick={() => { setError(""); setPdfImporterOpen(true); }} disabled={!activeSectors.length}>⇧ Importar PDF</button><button type="button" className="primary header-new-order" onClick={() => openNewOrder()} disabled={!activeSectors.length}>＋ Nova ordem</button></div>}</div></header>
+      <header><div className="page-heading"><button type="button" className="mobile-menu-button" aria-label="Abrir menu" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}><AppIcon name="menu" /></button><div><p className="eyebrow">{viewMeta[activeView].eyebrow}</p><h1>{viewMeta[activeView].title}</h1><p>{viewMeta[activeView].description}</p></div></div><div className="header-actions"><div className="header-utility-actions"><button type="button" className="header-utility-button" onClick={() => setGlobalSearchOpen(true)} aria-label="Busca global"><AppIcon name="search"/><span>Buscar</span><kbd>Ctrl K</kbd></button><button type="button" className="header-utility-button" onClick={() => setPendingCenterOpen(true)} aria-label="Central de pendências"><AppIcon name="alert"/><span>Pendências</span>{immediatePendingCount > 0 && <b className="utility-count">{immediatePendingCount}</b>}</button></div><span className={`sync-status ${isOnline ? "" : "offline"}`}>{isOnline ? "● Conectado" : "○ Offline"}</span>{currentProfile && <span className="role-badge" data-role={isAdmin ? "admin" : canOperate ? "operator" : "user"}>{roleLabel[currentProfile.role]}</span>}{showOrderActions && <div className="header-order-actions" aria-label="Ações exclusivas da página de pedidos"><button type="button" className="pdf-import-header-button" onClick={() => { setError(""); setPdfImporterOpen(true); }} disabled={!activeSectors.length}>⇧ Importar PDF</button><button type="button" className="primary header-new-order" onClick={() => openNewOrder()} disabled={!activeSectors.length}>＋ Nova ordem</button></div>}</div></header>
       {error && <div className="db-alert"><b>Atenção</b><span>{error}</span></div>}{notice && <div className="toast">✓ {notice}</div>}
       <OfflineModeBanner visible={!isOnline || usingOfflineSnapshot} savedAt={offlineSnapshotAt} />
       <Suspense fallback={<div className="page-loading-grid" aria-label="Carregando página"><span className="skeleton"/><span className="skeleton"/><span className="skeleton"/><span className="skeleton"/></div>}>
@@ -2793,8 +2885,8 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         boardRef={boardRef}
         topScrollRef={topScrollRef}
         dragOverLane={dragOverLane}
-        canOperate={canOperate}
-        isAdmin={Boolean(isAdmin && isOnline)}
+        canOperate={canMoveProduction}
+        isAdmin={canDeleteOrders}
         busyOrderId={busyOrderId}
         commentCounts={commentCounts}
         hasActiveSearch={hasActiveSearch}
@@ -2823,6 +2915,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         onPreview={(order, url) => { setImagePreviewZoom(1); setImagePreview({ src: url, alt: `Miniatura da OP ${order.op_number}` }); }}
         onThumbnailVisible={requestOrderThumbnail}
         onMoveOrder={setMoveOrderTarget}
+        onChangeStatus={setStatusOrderTarget}
         onFinishOrder={(order) => void finishOrder(order)}
       />}
 
@@ -2847,7 +2940,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         search={search}
         orders={completedOrderList}
         sectors={sectors}
-        canOperate={canOperate}
+        canOperate={canFinalizeOrders}
         onSearchChange={setSearch}
         onOpenHistory={(order) => openOrder(order, "history")}
         onReopen={(order) => {
@@ -2860,40 +2953,47 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         orders={activeOrders}
         sectors={sectors}
         installationSector={installationSector}
-        canOperate={canOperate}
+        canOperate={canManageAgenda}
         busyOrderId={busyOrderId}
         onOpenOrder={openOrder}
         onSchedule={(event, order) => void scheduleInstallation(event, order)}
       />}
 
-      {activeView === "activities" && <ActivitiesView profiles={profiles} orders={orders} currentUserId={user.id} canOperate={canOperate} onOpenOrder={openOrder} />}
+      {activeView === "activities" && <ActivitiesView profiles={profiles} orders={orders} currentUserId={user.id} canOperate={canManageActivities} canEditPrices={canEditPurchasePrices} onOpenOrder={openOrder} />}
 
       {activeView === "clients" && <ClientsView
         clients={clients}
         orders={orders}
-        canOperate={canOperate}
+        canOperate={canManageClients}
         onOpenOrder={openOrder}
         onNewClient={() => openCreateClient()}
         onEditClient={openEditClient}
       />}
 
-      {activeView === "users" && isAdmin && <UsersView
+      {activeView === "users" && canViewUsers && <UsersView
         profiles={profiles}
         currentUserId={user.id}
         profileBusyId={profileBusyId}
         online={isOnline}
+        canManage={canManageUsers}
+        canManagePermissions={isAdmin}
         onNewUser={() => { setUserCreateError(""); setUserModalOpen(true); }}
         onChangeRole={(profile, role) => void changeUserRole(profile, role)}
         onManageUser={(profile, action) => void manageUser(profile, action)}
+        onEditUser={editUser}
       />}
 
-      {activeView === "settings" && isAdmin && <SettingsView
+      {activeView === "settings" && canViewSettings && <SettingsView
         userEmail={user.email || ""}
         activeSectors={activeSectors}
         sectors={sectors}
         profiles={profiles}
         online={isOnline}
         onImportComplete={() => setReloadToken((current) => current + 1)}
+        canOperation={isAdmin || hasPermission("settings.operation")}
+        canIntegrations={isAdmin || hasPermission("settings.integrations")}
+        canPermissions={isAdmin}
+        canInfrastructure={isAdmin || hasPermission("settings.infrastructure")}
       />}
       </Suspense>
     </section>
@@ -2906,6 +3006,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
       onClose={() => setMoveOrderTarget(null)}
       onMove={moveSelectedOrder}
     />}
+    {statusOrderTarget && <ChangeOrderStatusModal order={statusOrderTarget} sectorName={activeSectors.find((sector) => sector.id === statusOrderTarget.sector_id)?.name || ""} busy={busyOrderId === statusOrderTarget.id} onClose={() => setStatusOrderTarget(null)} onChange={changeSelectedOrderStatus} />}
     {pdfImporterOpen && <div className="overlay pdf-import-overlay" onMouseDown={() => { if (!creatingOrder) setPdfImporterOpen(false); }}><div className="modal pdf-import-modal" role="dialog" aria-modal="true" aria-labelledby="pdf-import-title" onMouseDown={(event) => event.stopPropagation()}><button type="button" className="close" aria-label="Fechar importador de PDF" disabled={creatingOrder} onClick={() => setPdfImporterOpen(false)}>×</button>
       <p className="eyebrow">IMPORTAÇÃO DE ORDEM DE SERVIÇO</p><h2 id="pdf-import-title">Cadastrar pedidos a partir de PDF</h2><p>O sistema identifica os campos, cria um item para cada página e usa a própria página como miniatura da OS.</p>
       <PdfOrderImporter
@@ -2961,7 +3062,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         {detailLoading ? <div className="detail-loading">Carregando informações…</div> : detailTab === "summary" ? <form className="v3-order-summary editable-order-form" onSubmit={(event) => void saveOrderSummary(event, modal)}>
           <div className="form-grid">
             <label>Número da OP<input name="op_number" defaultValue={modal.op_number} placeholder="Vazio ou 0000 = automático" /><small>Deixe vazio ou use 0000 para gerar um número único.</small></label>
-            <label>Cliente<select name="client_id" defaultValue={modal.client_id || ""}><option value="">Cliente sem cadastro</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.trade_name || client.name}</option>)}</select></label>
+            <label>Cliente<select name="client_id" value={summaryClientId} onChange={(event) => setSummaryClientId(event.target.value)}><option value="">Cliente sem cadastro</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.trade_name || client.name}</option>)}</select><input type="hidden" name="client_name" value={modal.client_name || ""} /></label>
             <label className="wide">Serviço<textarea name="description" defaultValue={modal.description} required /></label>
             <label>Data da instalação ou entrega<input type="date" name="target_date" defaultValue={orderTargetDate(modal)} required /><small>Prazo de produção: {shortDateOnlyLabel(modal.delivery_date)}. Ao alterar a data, o prazo será recalculado para 1 dia útil antes.</small></label>
             <label>Prioridade<select name="priority" defaultValue={modal.priority}><option value="low">Baixa</option><option value="normal">Normal</option><option value="high">Alta</option><option value="urgent">Urgente</option></select></label>
@@ -2970,14 +3071,14 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
             <label className="wide">Observações gerais<textarea name="notes" defaultValue={modal.notes || ""} /></label>
           </div>
           <div className="detail-grid"><div><small>CLIENTE</small><b>{modal.client_name}</b></div><div><small>INSTALAÇÃO / ENTREGA</small><b>{orderTargetDateLabel(modal)}</b></div><div><small>PRAZO DE PRODUÇÃO</small><b>{dueLabel(modal.delivery_date)}</b></div><div><small>CONSULTOR</small><b>{modal.consultant_name || "Não definido"}</b></div><div><small>CRIADO EM</small><b>{dateTimeLabel(modal.created_at)}</b></div></div>
-          {canOperate && <div className="actions"><button type="submit" className="primary" disabled={busyOrderId === modal.id}>{busyOrderId === modal.id ? "Salvando…" : "Salvar alterações"}</button></div>}
-        </form> : detailTab === "production" ? <form className="v3-production-panel editable-order-form" onSubmit={(event) => void saveProductionDetails(event, modal)}>
+          {canEditOrders && <div className="actions"><button type="submit" className="primary" disabled={busyOrderId === modal.id}>{busyOrderId === modal.id ? "Salvando…" : "Salvar alterações"}</button></div>}
+        </form> : detailTab === "production" ? <section className="v3-production-panel editable-order-form production-autosave-panel">
           <div className="form-grid">
-            <label>Setor atual<select name="sector_id" defaultValue={modal.sector_id}>{activeSectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}</select></label>
-            <label>Status<select name="status" defaultValue={modal.status}>{statusesForSector(activeSectors.find((sector) => sector.id === modal.sector_id)?.name).map((status) => <option key={status} value={statusToDb[status]}>{status}</option>)}<option value="paused">Pausado</option><option value="completed">Concluído</option></select></label>
+            <label>Setor atual<select value={modal.sector_id} disabled={!canMoveProduction || busyOrderId === modal.id} onChange={(event) => void changeProductionField(modal, "sector_id", event.target.value)}>{activeSectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}</select></label>
+            <label>Status<select value={modal.status} disabled={!canMoveProduction || busyOrderId === modal.id} onChange={(event) => void changeProductionField(modal, "status", event.target.value)}>{statusesForSector(activeSectors.find((sector) => sector.id === modal.sector_id)?.name).map((status) => <option key={status} value={statusToDb[status]}>{status}</option>)}<option value="paused">Pausado</option>{modal.status === "completed" && <option value="completed">Concluído</option>}</select></label>
           </div>
-          <div className="v3-production-actions">{canOperate && <button type="submit" className="primary" disabled={busyOrderId === modal.id}>{busyOrderId === modal.id ? "Salvando…" : "Salvar produção"}</button>}{canOperate && modal.status !== "completed" && <button type="button" onClick={() => void finishOrder(modal)}>Finalizar ordem</button>}</div>
-        </form> : detailTab === "materials" ? <div className="os-workspace-panel material-availability-panel">
+          <div className="v3-production-actions"><span className={`production-autosave-state ${productionFeedback}`}>{productionFeedback === "saving" ? "Salvando…" : productionFeedback === "saved" ? "✓ Atualizado" : productionFeedback === "error" ? "Falha ao salvar; valor anterior restaurado" : "Setor e status são salvos automaticamente"}</span>{canFinalizeOrders && modal.status !== "completed" && <button type="button" onClick={() => void finishOrder(modal)}>Finalizar ordem</button>}</div>
+        </section> : detailTab === "materials" ? <div className="os-workspace-panel material-availability-panel">
           <div className="os-section-heading"><div><small>DISPONIBILIDADE DA OS</small><h3>Materiais da ordem</h3><p>Informe o material, a quantidade, a unidade e a disponibilidade. Itens indisponíveis entram automaticamente na atividade consolidada de Compras da OP.</p></div><span>{materials.length} item(ns)</span></div>
           <div className="os-material-table simplified-material-table">
             <div className="os-table-head"><span>Material</span><span>Disponibilidade</span><span>Compra</span><span>Ações</span></div>
@@ -2997,7 +3098,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
                   className={`material-availability-select ${material.availability}`}
                   value={material.availability}
                   onChange={(event) => void updateMaterialAvailability(material, event.target.value as OrderMaterial["availability"])}
-                  disabled={!canOperate || workspaceBusy}
+                  disabled={!canEditMaterials || workspaceBusy}
                   aria-label={`Disponibilidade de ${material.material_name}`}
                 >
                   <option value="available">Disponível</option>
@@ -3011,20 +3112,22 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
                 </div>
                 <div className="material-row-actions">
                   {material.purchase_activity_id && <button type="button" className="material-icon-action" onClick={() => { setModal(null); navigateTo("activities"); }} title="Abrir Atividades e Compras" aria-label={`Abrir compra de ${material.material_name}`}><AppIcon name="tasks" /></button>}
-                  <button type="button" className="material-icon-action" onClick={() => editMaterial(material)} disabled={!canOperate || workspaceBusy} title="Editar todos os dados" aria-label={`Editar ${material.material_name}`}><AppIcon name="edit" /></button>
-                  <button type="button" className="material-icon-action danger" onClick={() => void deleteMaterial(material)} disabled={!canOperate || workspaceBusy} title="Excluir material" aria-label={`Excluir ${material.material_name}`}><AppIcon name="trash" /></button>
+                  <button type="button" className="material-icon-action" onClick={() => editMaterial(material)} disabled={!canEditMaterials || workspaceBusy} title="Editar todos os dados" aria-label={`Editar ${material.material_name}`}><AppIcon name="edit" /></button>
+                  <button type="button" className="material-icon-action danger" onClick={() => void deleteMaterial(material)} disabled={!canEditMaterials || workspaceBusy} title="Excluir material" aria-label={`Excluir ${material.material_name}`}><AppIcon name="trash" /></button>
                 </div>
               </div>;
             })}
           </div>
           {!materials.length && <div className="workspace-empty">Nenhum material cadastrado. Adicione o primeiro item e informe se ele está disponível.</div>}
-          {canOperate && <form className="os-inline-form simplified-material-form" onSubmit={addMaterial}>
-            <label><span>Material</span><input name="material_name" placeholder="Ex.: Metalom 20 × 20, ACM preto, tinta azul" required /></label>
-            <label><span>Quantidade</span><input name="quantity" type="number" min="0.001" step="0.001" defaultValue="1" required /></label>
-            <label><span>Unidade</span><input name="unit" defaultValue="un" placeholder="un, chapa, barra, litro…" required /></label>
-            <label><span>Disponibilidade</span><select name="availability" defaultValue="available"><option value="available">Disponível</option><option value="unavailable">Não disponível</option></select></label>
-            <label><span>Observação opcional</span><input name="notes" placeholder="Medida, cor ou especificação" /></label>
-            <button type="submit" className="primary" disabled={workspaceBusy}>{workspaceBusy ? "Salvando…" : "Adicionar material"}</button>
+          {canEditMaterials && <form className="os-inline-form simplified-material-form" onSubmit={addMaterial}>
+            <div className="simplified-material-fields">
+              <label><span>Material</span><input name="material_name" placeholder="Ex.: Metalom 20 × 20, ACM preto, tinta azul" required /></label>
+              <label><span>Quantidade</span><input name="quantity" type="number" min="0.001" step="0.001" defaultValue="1" required /></label>
+              <label><span>Unidade</span><input name="unit" defaultValue="un" placeholder="un, chapa, barra, litro…" required /></label>
+              <label><span>Disponibilidade</span><select name="availability" defaultValue="available"><option value="available">Disponível</option><option value="unavailable">Não disponível</option></select></label>
+              <label><span>Observação opcional</span><input name="notes" placeholder="Medida, cor ou especificação" /></label>
+            </div>
+            <div className="simplified-material-actions"><button type="submit" className="primary" disabled={workspaceBusy}>{workspaceBusy ? "Salvando…" : "Adicionar material"}</button></div>
           </form>}
         </div> : detailTab === "files" ? <div className="os-workspace-panel">
           <div className="os-section-heading"><div><small>GOOGLE DRIVE</small><h3>Arquivos e pastas da ordem</h3></div><span>Upload automático e vínculo manual</span></div>
@@ -3082,9 +3185,9 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
           {!orderFiles.length && <div className="workspace-empty">Nenhum arquivo vinculado. Envie diretamente ao Drive ou cadastre um link existente.</div>}
         </div> : detailTab === "checklist" ? <div className="os-workspace-panel">
           <div className="os-section-heading"><div><small>LIBERAÇÃO E QUALIDADE</small><h3>Checklist da ordem</h3></div><span>{checklist.filter((item) => item.completed).length} de {checklist.length} concluídos</span></div>
-          {!checklist.length && canOperate && <button type="button" className="checklist-template-button" onClick={() => void createDefaultChecklist()} disabled={workspaceBusy}>Criar checklist padrão da Publicolor</button>}
-          <div className="os-checklist-list">{checklist.map((item) => <label key={item.id} className={item.completed ? "completed" : ""}><input type="checkbox" checked={item.completed} onChange={() => void toggleChecklistItem(item)} disabled={!canOperate || workspaceBusy} /><span><b>{item.label}</b><small>{item.category}</small></span></label>)}</div>
-          {canOperate && <form className="checklist-add-form" onSubmit={addChecklistItem}><input name="label" placeholder="Novo item de conferência" required /><input name="category" placeholder="Categoria" defaultValue="Geral" /><button type="submit" className="primary" disabled={workspaceBusy}>Adicionar item</button></form>}
+          {!checklist.length && canEditOrders && <button type="button" className="checklist-template-button" onClick={() => void createDefaultChecklist()} disabled={workspaceBusy}>Criar checklist padrão da Publicolor</button>}
+          <div className="os-checklist-list">{checklist.map((item) => <label key={item.id} className={item.completed ? "completed" : ""}><input type="checkbox" checked={item.completed} onChange={() => void toggleChecklistItem(item)} disabled={!canEditOrders || workspaceBusy} /><span><b>{item.label}</b><small>{item.category}</small></span></label>)}</div>
+          {canEditOrders && <form className="checklist-add-form" onSubmit={addChecklistItem}><input name="label" placeholder="Novo item de conferência" required /><input name="category" placeholder="Categoria" defaultValue="Geral" /><button type="submit" className="primary" disabled={workspaceBusy}>Adicionar item</button></form>}
         </div> : detailTab === "installation" ? <form className="v3-installation-form" onSubmit={(event) => void saveInstallationDetails(event, modal)}>
           <div className="form-grid">
             <label>Data e hora da instalação ou entrega<input type="datetime-local" name="scheduled_at" defaultValue={toInstallationInputValue(modal.installation_scheduled_at)} required /><small>O prazo de produção será ajustado automaticamente para 1 dia útil antes.</small></label>
@@ -3094,7 +3197,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
             <label>Veículo<input name="installation_vehicle" defaultValue={modal.installation_vehicle || ""} placeholder="Ex.: Fiorino / placa" /></label>
             <label className="wide">Orientações<textarea name="installation_notes" defaultValue={modal.installation_notes || ""} placeholder="Acesso, contato no local, equipamentos e observações..." /></label>
           </div>
-          <div className="actions"><button type="button" onClick={() => navigateTo("installation")}>Abrir agenda</button>{canOperate && <button type="submit" className="primary" disabled={busyOrderId === modal.id}>{busyOrderId === modal.id ? "Salvando…" : "Salvar instalação"}</button>}</div>
+          <div className="actions"><button type="button" onClick={() => navigateTo("installation")}>Abrir agenda</button>{canManageAgenda && <button type="submit" className="primary" disabled={busyOrderId === modal.id}>{busyOrderId === modal.id ? "Salvando…" : "Salvar instalação"}</button>}</div>
         </form> : detailTab === "history" ? <div className="detail-feed">
           {historyTimeline.map((item) => {
             if (item.kind === "change") {
@@ -3116,6 +3219,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
       material={materialEditor}
       busy={workspaceBusy}
       contextLabel={modal && modal !== "new" ? `OP ${modal.op_number} · MATERIAIS` : "MATERIAIS DA OS"}
+      canEditPurchaseValues={canEditPurchasePrices}
       onClose={() => !workspaceBusy && setMaterialEditor(null)}
       onSave={saveMaterialEditor}
     />}
@@ -3159,7 +3263,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
       </div>
     </div>}
     <ClientFormModal open={clientModalOpen} busy={clientBusy} error={clientError} client={editingClient} onClose={closeClientModal} onSubmit={saveClient} />
-    {userModalOpen && isAdmin && <div className="overlay" onMouseDown={() => { if (!creatingUser) setUserModalOpen(false); }}>
+    {userModalOpen && canManageUsers && <div className="overlay" onMouseDown={() => { if (!creatingUser) setUserModalOpen(false); }}>
       <div className="modal user-invite-modal" role="dialog" aria-modal="true" aria-labelledby="new-user-title" onMouseDown={(event) => event.stopPropagation()}>
         <button type="button" className="close" aria-label="Fechar cadastro de usuário" disabled={creatingUser} onClick={() => setUserModalOpen(false)}>×</button>
         <p className="eyebrow">ACESSO DA EQUIPE</p>

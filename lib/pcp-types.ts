@@ -24,7 +24,19 @@ export type Client = {
   created_at: string;
   updated_at: string;
 };
-export type Profile = { id: string; name: string; email: string; role: AppRole; active: boolean; created_at: string; last_seen_at?: string | null; invited_at?: string | null; invite_status?: "pending" | "accepted" | "expired" | "cancelled" | null };
+export type Profile = {
+  id: string;
+  name: string;
+  email: string;
+  role: AppRole;
+  active: boolean;
+  created_at: string;
+  last_seen_at?: string | null;
+  invited_at?: string | null;
+  invite_status?: "pending" | "accepted" | "expired" | "cancelled" | null;
+  display_title?: string | null;
+  admin_notes?: string | null;
+};
 export type Author = { name: string; email: string } | null;
 
 export type Order = {

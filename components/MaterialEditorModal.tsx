@@ -9,6 +9,7 @@ type Props = {
   material: OrderMaterial;
   busy?: boolean;
   contextLabel?: string;
+  canEditPurchaseValues?: boolean;
   onClose: () => void;
   onSave: (submission: MaterialEditorSubmission) => Promise<void> | void;
 };
@@ -33,7 +34,7 @@ function nullableText(form: FormData, name: string) {
   return String(form.get(name) || "").trim() || null;
 }
 
-export function MaterialEditorModal({ material, busy = false, contextLabel = "ORDEM DE SERVIÇO", onClose, onSave }: Props) {
+export function MaterialEditorModal({ material, busy = false, contextLabel = "ORDEM DE SERVIÇO", canEditPurchaseValues = true, onClose, onSave }: Props) {
   const [error, setError] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -44,10 +45,10 @@ export function MaterialEditorModal({ material, busy = false, contextLabel = "OR
     const quantity = decimalValue(form.get("quantity"), true);
     const unit = String(form.get("unit") || "").trim();
     const width = decimalValue(form.get("width"));
-    const unitPrice = decimalValue(form.get("unit_price"));
-    const actualUnitPrice = decimalValue(form.get("actual_unit_price"));
-    const purchasedQuantity = decimalValue(form.get("purchased_quantity"));
-    const receivedQuantity = decimalValue(form.get("received_quantity"));
+    const unitPrice = canEditPurchaseValues ? decimalValue(form.get("unit_price")) : material.unit_price;
+    const actualUnitPrice = canEditPurchaseValues ? decimalValue(form.get("actual_unit_price")) : material.actual_unit_price;
+    const purchasedQuantity = canEditPurchaseValues ? decimalValue(form.get("purchased_quantity")) : material.purchased_quantity;
+    const receivedQuantity = canEditPurchaseValues ? decimalValue(form.get("received_quantity")) : material.received_quantity;
     const status = String(form.get("status") || "planned") as OrderMaterial["status"];
     let availability = String(form.get("availability") || "available") as OrderMaterial["availability"];
     let purchaseStatus = String(form.get("purchase_status") || material.purchase_status || "pending") as PurchaseActivityStatus;
@@ -66,7 +67,9 @@ export function MaterialEditorModal({ material, busy = false, contextLabel = "OR
     if (availability === "unavailable" && purchaseStatus === "finalized") purchaseStatus = "pending";
     if (purchaseStatus === "finalized") availability = "available";
 
-    const purchaseOrderedAt = String(form.get("purchase_ordered_at") || "").trim();
+    const purchaseOrderedAt = canEditPurchaseValues
+      ? String(form.get("purchase_ordered_at") || "").trim()
+      : localDateTimeValue(material.purchase_ordered_at);
     const patch: MaterialEditorPatch = {
       material_name: materialName,
       quantity: Number(quantity),
@@ -79,12 +82,12 @@ export function MaterialEditorModal({ material, busy = false, contextLabel = "OR
       actual_unit_price: actualUnitPrice === null ? null : Number(actualUnitPrice),
       purchased_quantity: purchasedQuantity === null ? null : Number(purchasedQuantity),
       received_quantity: receivedQuantity === null ? null : Number(receivedQuantity),
-      purchase_order_number: nullableText(form, "purchase_order_number"),
-      purchase_ordered_at: purchaseOrderedAt ? new Date(purchaseOrderedAt).toISOString() : null,
-      invoice_number: nullableText(form, "invoice_number"),
-      purchase_document_url: nullableText(form, "purchase_document_url"),
-      invoice_file_url: nullableText(form, "invoice_file_url"),
-      receipt_notes: nullableText(form, "receipt_notes"),
+      purchase_order_number: canEditPurchaseValues ? nullableText(form, "purchase_order_number") : material.purchase_order_number,
+      purchase_ordered_at: purchaseOrderedAt ? new Date(purchaseOrderedAt).toISOString() : material.purchase_ordered_at,
+      invoice_number: canEditPurchaseValues ? nullableText(form, "invoice_number") : material.invoice_number,
+      purchase_document_url: canEditPurchaseValues ? nullableText(form, "purchase_document_url") : material.purchase_document_url,
+      invoice_file_url: canEditPurchaseValues ? nullableText(form, "invoice_file_url") : material.invoice_file_url,
+      receipt_notes: canEditPurchaseValues ? nullableText(form, "receipt_notes") : material.receipt_notes,
     };
 
     setError("");
@@ -126,22 +129,22 @@ export function MaterialEditorModal({ material, busy = false, contextLabel = "OR
         <div className="material-editor-grid">
           <label>Disponibilidade<select name="availability" defaultValue={material.availability}><option value="available">Disponível</option><option value="unavailable">Não disponível</option></select></label>
           <label>Status da compra<select name="purchase_status" defaultValue={material.purchase_status || (material.availability === "available" ? "finalized" : "pending")}>{PURCHASE_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-          <label>Preço unitário estimado<input name="unit_price" inputMode="decimal" defaultValue={material.unit_price ?? ""} placeholder="0,00" /></label>
-          <label>Preço unitário efetivo<input name="actual_unit_price" inputMode="decimal" defaultValue={material.actual_unit_price ?? ""} placeholder="0,00" /></label>
-          <label>Quantidade comprada<input name="purchased_quantity" inputMode="decimal" defaultValue={material.purchased_quantity ?? ""} /></label>
-          <label>Quantidade recebida<input name="received_quantity" inputMode="decimal" defaultValue={material.received_quantity ?? ""} /></label>
+          <label>Preço unitário estimado<input name="unit_price" inputMode="decimal" disabled={!canEditPurchaseValues} defaultValue={material.unit_price ?? ""} placeholder="0,00" /></label>
+          <label>Preço unitário efetivo<input name="actual_unit_price" inputMode="decimal" disabled={!canEditPurchaseValues} defaultValue={material.actual_unit_price ?? ""} placeholder="0,00" /></label>
+          <label>Quantidade comprada<input name="purchased_quantity" inputMode="decimal" disabled={!canEditPurchaseValues} defaultValue={material.purchased_quantity ?? ""} /></label>
+          <label>Quantidade recebida<input name="received_quantity" inputMode="decimal" disabled={!canEditPurchaseValues} defaultValue={material.received_quantity ?? ""} /></label>
         </div>
       </section>
 
       <section className="material-editor-section">
-        <div className="material-editor-section-title"><AppIcon name="link"/><div><b>Pedido, documento e recebimento</b><span>Informações opcionais para acompanhar a compra sem criar fornecedores ou cotações.</span></div></div>
+        <div className="material-editor-section-title"><AppIcon name="link"/><div><b>Pedido, documento e recebimento</b><span>Informações opcionais para acompanhar a compra sem criar fornecedores ou cotações.{!canEditPurchaseValues ? " Seu nível não permite alterar valores de compra." : ""}</span></div></div>
         <div className="material-editor-grid">
-          <label>Número do pedido<input name="purchase_order_number" defaultValue={material.purchase_order_number || ""} /></label>
-          <label>Data do pedido<input type="datetime-local" name="purchase_ordered_at" defaultValue={localDateTimeValue(material.purchase_ordered_at)} /></label>
-          <label>Número da nota fiscal<input name="invoice_number" defaultValue={material.invoice_number || ""} /></label>
-          <label className="wide">Link do comprovante<input type="url" name="purchase_document_url" defaultValue={material.purchase_document_url || ""} placeholder="https://…" /></label>
-          <label className="wide">Link da nota fiscal<input type="url" name="invoice_file_url" defaultValue={material.invoice_file_url || ""} placeholder="https://…" /></label>
-          <label className="wide">Observação do recebimento<textarea name="receipt_notes" defaultValue={material.receipt_notes || ""} placeholder="Ex.: material recebido parcialmente; restante previsto para amanhã." /></label>
+          <label>Número do pedido<input name="purchase_order_number" disabled={!canEditPurchaseValues} defaultValue={material.purchase_order_number || ""} /></label>
+          <label>Data do pedido<input type="datetime-local" name="purchase_ordered_at" disabled={!canEditPurchaseValues} defaultValue={localDateTimeValue(material.purchase_ordered_at)} /></label>
+          <label>Número da nota fiscal<input name="invoice_number" disabled={!canEditPurchaseValues} defaultValue={material.invoice_number || ""} /></label>
+          <label className="wide">Link do comprovante<input type="url" name="purchase_document_url" disabled={!canEditPurchaseValues} defaultValue={material.purchase_document_url || ""} placeholder="https://…" /></label>
+          <label className="wide">Link da nota fiscal<input type="url" name="invoice_file_url" disabled={!canEditPurchaseValues} defaultValue={material.invoice_file_url || ""} placeholder="https://…" /></label>
+          <label className="wide">Observação do recebimento<textarea name="receipt_notes" disabled={!canEditPurchaseValues} defaultValue={material.receipt_notes || ""} placeholder="Ex.: material recebido parcialmente; restante previsto para amanhã." /></label>
         </div>
       </section>
 

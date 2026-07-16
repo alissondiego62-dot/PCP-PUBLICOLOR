@@ -22,6 +22,7 @@ import "./responsive.css";
 import "@/features/kanban/kanban-indicators.css";
 import "@/features/dashboard/dashboard-3-2.css";
 import "./release-3-4-1.css";
+import "./release-3-4-2.css";
 import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 import { PwaUpdatePrompt } from "@/components/PwaUpdatePrompt";
 

@@ -167,7 +167,7 @@ export function DashboardView(props: DashboardViewProps) {
       <Kpi icon="alert" tone="danger" label="Bloqueados/pausados" value={operational.blocked.length} detail="Exigem intervenção" onClick={() => onApplyKanbanMetric("blocked")} />
     </div>
 
-    {(schemaPending || error) && <div className="v34-dashboard-alert">{schemaPending ? "Aplique o SQL 3.4.1 para ativar o resumo otimizado do Dashboard. Os indicadores locais continuam disponíveis." : error}</div>}
+    {(schemaPending || error) && <div className="v34-dashboard-alert">{schemaPending ? "Aplique o SQL 3.4.2 para ativar o resumo otimizado do Dashboard. Os indicadores locais continuam disponíveis." : error}</div>}
 
     <div className="v34-dashboard-grid">
       <article className="v34-panel priority"><PanelHeader eyebrow="AÇÃO IMEDIATA" title="Pendências prioritárias" action="Abrir produção" onClick={() => onNavigate("kanban")} />

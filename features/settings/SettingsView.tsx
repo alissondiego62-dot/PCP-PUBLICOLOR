@@ -12,37 +12,44 @@ import { AdminAuditPanel } from "@/components/AdminAuditPanel";
 import { SystemHealthPanel } from "@/components/SystemHealthPanel";
 import { ThumbnailOptimizationPanel } from "@/components/ThumbnailOptimizationPanel";
 import { AppIcon } from "@/components/ui/AppIcon";
+import { PermissionsSettingsPanel } from "@/components/PermissionsSettingsPanel";
 
-type SettingsTab = "general" | "operation" | "integrations" | "data" | "diagnostics" | "infrastructure";
-const tabs: Array<{ key: SettingsTab; label: string; icon: "settings" | "kanban" | "link" | "database" | "activity" | "shield" }> = [
+type SettingsTab = "general" | "operation" | "integrations" | "data" | "diagnostics" | "permissions" | "infrastructure";
+const tabs: Array<{ key: SettingsTab; label: string; icon: "settings" | "kanban" | "link" | "database" | "activity" | "shield" | "users" }> = [
   { key: "general", label: "Geral", icon: "settings" },
   { key: "operation", label: "Operação", icon: "kanban" },
   { key: "integrations", label: "Integrações", icon: "link" },
   { key: "data", label: "Dados", icon: "database" },
   { key: "diagnostics", label: "Diagnóstico", icon: "activity" },
+  { key: "permissions", label: "Permissões de usuários", icon: "users" },
   { key: "infrastructure", label: "Infraestrutura", icon: "shield" },
 ];
 
-export function SettingsView({ userEmail, activeSectors, sectors, profiles, online, onImportComplete }: {
+export function SettingsView({ userEmail, activeSectors, sectors, profiles, online, onImportComplete, canOperation, canIntegrations, canPermissions, canInfrastructure }: {
   userEmail: string;
   activeSectors: Sector[];
   sectors: Sector[];
   profiles: Profile[];
   online: boolean;
   onImportComplete: () => void;
+  canOperation: boolean;
+  canIntegrations: boolean;
+  canPermissions: boolean;
+  canInfrastructure: boolean;
 }) {
+  const availableTabs = tabs.filter((tab) => tab.key === "general" || (tab.key === "operation" && canOperation) || (["integrations","data","diagnostics"].includes(tab.key) && canIntegrations) || (tab.key === "permissions" && canPermissions) || (tab.key === "infrastructure" && canInfrastructure));
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [infraUnlocked, setInfraUnlocked] = useState(false);
   const [confirmation, setConfirmation] = useState("");
 
   useEffect(() => {
     const saved = window.sessionStorage.getItem("pcp-settings-tab") as SettingsTab | null;
-    if (saved && tabs.some((tab) => tab.key === saved)) setActiveTab(saved);
-  }, []);
+    if (saved && availableTabs.some((tab) => tab.key === saved)) setActiveTab(saved);
+  }, [canOperation, canIntegrations, canPermissions, canInfrastructure]);
   useEffect(() => { window.sessionStorage.setItem("pcp-settings-tab", activeTab); }, [activeTab]);
 
   return <section className="management-view settings-view settings-v34">
-    <nav className="settings-tabs" aria-label="Categorias das configurações">{tabs.map((tab) => <button key={tab.key} type="button" className={activeTab === tab.key ? "active" : ""} onClick={() => setActiveTab(tab.key)}><AppIcon name={tab.icon}/><span>{tab.label}</span></button>)}</nav>
+    <nav className="settings-tabs" aria-label="Categorias das configurações">{availableTabs.map((tab) => <button key={tab.key} type="button" className={activeTab === tab.key ? "active" : ""} onClick={() => setActiveTab(tab.key)}><AppIcon name={tab.icon}/><span>{tab.label}</span></button>)}</nav>
 
     {activeTab === "general" && <div className="settings-tab-content"><div className="settings-grid">
       <div className="settings-security-note">As credenciais não são exibidas no navegador. Esta área é restrita aos administradores.</div>
@@ -56,6 +63,7 @@ export function SettingsView({ userEmail, activeSectors, sectors, profiles, onli
     {activeTab === "integrations" && <div className="settings-tab-content">{online ? <><GoogleDriveSettings/><ThumbnailOptimizationPanel/></> : <OfflineMessage/>}</div>}
     {activeTab === "data" && <div className="settings-tab-content">{online ? <DataImportExportSettings sectors={sectors} onImportComplete={onImportComplete}/> : <OfflineMessage/>}</div>}
     {activeTab === "diagnostics" && <div className="settings-tab-content">{online ? <><IntegrationDiagnosticsPanel/><AdminAuditPanel/></> : <OfflineMessage/>}</div>}
+    {activeTab === "permissions" && <div className="settings-tab-content">{online ? <PermissionsSettingsPanel/> : <OfflineMessage/>}</div>}
     {activeTab === "infrastructure" && <div className="settings-tab-content infrastructure-tab">{!online ? <OfflineMessage/> : !infraUnlocked ? <section className="infrastructure-lock"><AppIcon name="shield"/><h2>Área de alto risco</h2><p>Esta área altera ambiente, banco, variáveis e SQL. Digite <b>PUBLICOLOR</b> para liberar durante esta sessão.</p><label><span>Confirmação</span><input value={confirmation} onChange={(event) => setConfirmation(event.target.value.toLocaleUpperCase("pt-BR"))} placeholder="PUBLICOLOR"/></label><button type="button" className="danger" disabled={confirmation !== "PUBLICOLOR"} onClick={() => setInfraUnlocked(true)}>Liberar infraestrutura</button></section> : <><div className="infrastructure-warning"><AppIcon name="alert"/><div><b>Operações sensíveis liberadas</b><p>Confirme o ambiente, tenha backup e registre o motivo antes de qualquer alteração.</p></div><button type="button" onClick={() => { setInfraUnlocked(false); setConfirmation(""); }}>Bloquear novamente</button></div><PlatformAdministrationSettings/></>}</div>}
   </section>;
 }
