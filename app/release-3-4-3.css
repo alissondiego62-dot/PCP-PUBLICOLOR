@@ -1,0 +1,129 @@
+/* Publicolor PCP 3.4.3 · pilhas de subpedidos no Kanban */
+
+.kanban-order-stack{
+  position:relative;
+  display:grid;
+  gap:8px;
+  margin:0 0 11px;
+  isolation:isolate;
+}
+.kanban-order-stack.collapsed::before,
+.kanban-order-stack.collapsed::after{
+  content:"";
+  position:absolute;
+  z-index:-1;
+  left:7px;
+  right:7px;
+  height:100%;
+  border:1px solid #dfd5e3;
+  border-radius:12px;
+  background:#faf7fb;
+  pointer-events:none;
+}
+.kanban-order-stack.collapsed::before{top:5px;transform:scale(.985)}
+.kanban-order-stack.collapsed::after{top:10px;left:13px;right:13px;transform:scale(.97);background:#f5eff7}
+.kanban-order-stack.expanded{padding-bottom:4px}
+.kanban-stack-summary{
+  position:relative;
+  cursor:pointer;
+  border-color:#cdb9d5!important;
+  box-shadow:0 7px 18px rgba(72,29,87,.09)!important;
+}
+.kanban-stack-summary:hover{border-color:#a879b9!important;box-shadow:0 10px 24px rgba(72,29,87,.14)!important}
+.kanban-stack-summary:focus-within{outline:2px solid rgba(102,34,126,.18);outline-offset:2px}
+.kanban-stack-summary.stack-has-late{border-color:#e4aaa5!important}
+.kanban-stack-toggle{
+  position:absolute;
+  z-index:5;
+  top:8px;
+  right:8px;
+  width:32px;
+  height:32px;
+  display:grid;
+  place-items:center;
+  border:1px solid #d9c9df;
+  border-radius:9px;
+  background:rgba(255,255,255,.96);
+  color:#612276;
+  cursor:pointer;
+  box-shadow:0 3px 9px rgba(61,25,73,.08);
+}
+.kanban-stack-toggle:hover{background:#f6eef8;border-color:#b995c5}
+.kanban-stack-summary .order-top{padding-right:36px}
+.kanban-stack-summary .tag.stack-count{background:#eee1f2;color:#642379}
+.kanban-stack-metrics{
+  display:grid;
+  grid-template-columns:64px minmax(0,1fr) minmax(0,1.1fr);
+  gap:6px;
+  margin:8px 0;
+}
+.kanban-stack-metrics>span{
+  min-width:0;
+  display:grid;
+  gap:2px;
+  padding:7px 8px;
+  border:1px solid #e5dce8;
+  border-radius:8px;
+  background:#faf7fb;
+}
+.kanban-stack-metrics small{font-size:7px;font-weight:850;letter-spacing:.45px;color:#827487}
+.kanban-stack-metrics b{min-width:0;font-size:9px;color:#342039;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kanban-stack-footer{
+  min-height:34px;
+  margin:9px -1px -1px;
+  padding:0 10px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  border-top:1px solid #e9e1eb;
+  border-radius:0 0 10px 10px;
+  background:#faf7fb;
+  color:#632278;
+  font-size:9px;
+  font-weight:850;
+}
+.kanban-stack-children{
+  display:grid;
+  gap:10px;
+  padding:4px 0 2px 9px;
+  border-left:3px solid #d9c2e1;
+  animation:kanban-stack-open .16s ease-out;
+}
+.kanban-stack-children .stack-child-order{
+  margin:0;
+  box-shadow:0 4px 12px rgba(54,25,64,.055);
+}
+.kanban-stack-children .stack-child-order::before{
+  content:"SUBPEDIDO";
+  display:block;
+  margin:-2px 0 6px;
+  color:#80528e;
+  font-size:7px;
+  font-weight:900;
+  letter-spacing:.65px;
+}
+@keyframes kanban-stack-open{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+
+.sector.compact-mode .kanban-stack-metrics{grid-template-columns:1fr 1fr;margin:6px 0}
+.sector.compact-mode .kanban-stack-metrics>span:last-child{display:none}
+.sector.compact-mode .kanban-stack-summary .order-thumbnail{height:86px}
+.sector.compact-mode .kanban-stack-summary .order-service{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sector.compact-mode .kanban-stack-footer{min-height:30px}
+
+@media(max-width:768px){
+  .kanban-order-stack{margin-bottom:13px}
+  .kanban-stack-toggle{width:38px;height:38px;top:9px;right:9px}
+  .kanban-stack-summary .order-top{padding-right:43px}
+  .kanban-stack-metrics{grid-template-columns:74px minmax(0,1fr)}
+  .kanban-stack-metrics>span:last-child{grid-column:1/-1}
+  .kanban-stack-metrics b{font-size:10px}
+  .kanban-stack-footer{min-height:40px;font-size:10px}
+  .kanban-stack-children{padding-left:7px;border-left-width:2px}
+}
+
+@media(max-width:420px){
+  .kanban-stack-metrics{grid-template-columns:1fr 1fr}
+  .kanban-stack-metrics>span:last-child{grid-column:1/-1}
+  .kanban-stack-summary .order-badges{padding-right:1px}
+}

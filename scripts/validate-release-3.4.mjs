@@ -19,6 +19,7 @@ const requiredFiles = [
   "lib/order-materials.ts",
   "app/release-3-4-1.css",
   "app/release-3-4-2.css",
+  "app/release-3-4-3.css",
   "components/PermissionsSettingsPanel.tsx",
   "features/kanban/ChangeOrderStatusModal.tsx",
   "app/api/admin/permissions/route.ts",
@@ -41,9 +42,12 @@ const requiredFiles = [
   "SQL-VALIDAR-PUBLICOLOR-3.4.2.sql",
   "docs/ATUALIZACAO-3.4.2.md",
   "docs/REVISAO-E-SUGESTOES-3.4.2.md",
+  "docs/ATUALIZACAO-3.4.3.md",
   "docs/AUDITORIA-FINAL-3.4.0.md",
   "COMO-ATUALIZAR-PUBLICOLOR-3.4.2.txt",
   "VALIDACAO-PUBLICOLOR-3.4.2.txt",
+  "COMO-ATUALIZAR-PUBLICOLOR-3.4.3.txt",
+  "VALIDACAO-PUBLICOLOR-3.4.3.txt",
 ];
 
 const missing = requiredFiles.filter((file) => !fs.existsSync(path.join(root, file)));
@@ -53,14 +57,14 @@ if (missing.length) {
 }
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-if (packageJson.version !== "3.4.2") {
+if (packageJson.version !== "3.4.3") {
   console.error(`Versão inválida no package.json: ${packageJson.version}`);
   process.exit(1);
 }
 
 const serviceWorker = fs.readFileSync(path.join(root, "public/service-worker.js"), "utf8");
-if (!serviceWorker.includes("v3.4.2")) {
-  console.error("O Service Worker não aponta para o cache 3.4.2.");
+if (!serviceWorker.includes("v3.4.3")) {
+  console.error("O Service Worker não aponta para o cache 3.4.3.");
   process.exit(1);
 }
 

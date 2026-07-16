@@ -121,6 +121,132 @@ function OrderThumbnail({
   </div></div>;
 }
 
+type KanbanOrderCardProps = {
+  order: Order;
+  canOperate: boolean;
+  isAdmin: boolean;
+  busyOrderId: string | null;
+  commentCount: number;
+  cardImageUrl: (order: Order) => string;
+  onDragStart: (orderId: string) => void;
+  onDragEnd: () => void;
+  onOpenOrder: (order: Order, tab: "history" | "comments") => void;
+  onDeleteOrder: (order: Order) => void;
+  onPreview: (order: Order, url: string) => void;
+  onThumbnailVisible: (order: Order) => void;
+  onMoveOrder: (order: Order) => void;
+  onChangeStatus: (order: Order) => void;
+  onFinishOrder: (order: Order) => void;
+  stackedChild?: boolean;
+};
+
+function KanbanOrderCard({
+  order, canOperate, isAdmin, busyOrderId, commentCount, cardImageUrl,
+  onDragStart, onDragEnd, onOpenOrder, onDeleteOrder, onPreview,
+  onThumbnailVisible, onMoveOrder, onChangeStatus, onFinishOrder, stackedChild = false,
+}: KanbanOrderCardProps) {
+  const ageLabel = sectorAgeLabel(order);
+  const ageInDays = Number(ageLabel.match(/^(\d+)d/)?.[1] || 0);
+
+  return <div
+    draggable={canOperate && busyOrderId !== order.id}
+    aria-disabled={!canOperate}
+    onDragStart={(event) => {
+      if (!canOperate) { event.preventDefault(); return; }
+      event.dataTransfer.effectAllowed = "move";
+      onDragStart(order.id);
+    }}
+    onDragEnd={onDragEnd}
+    onClick={() => onOpenOrder(order, "history")}
+    className={`order ${priorityLabel[order.priority].toLowerCase()} ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-order" : ""} ${order.blocked || order.status === "paused" ? "blocked-order" : ""} ${stackedChild ? "stack-child-order" : ""}`}
+  >
+    {isAdmin && <button type="button" className="delete-order-button" aria-label={`Apagar OP ${order.op_number}`} title="Apagar pedido" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onDeleteOrder(order); }}><AppIcon name="trash" /></button>}
+    <OrderThumbnail order={order} url={cardImageUrl(order)} onVisible={onThumbnailVisible} onPreview={onPreview} />
+    <div className="order-top"><b>OP {order.op_number}</b><div className="order-badges"><span className={`tag ${priorityLabel[order.priority].toLowerCase()}`}>{priorityLabel[order.priority]}</span>{(order.blocked || order.status === "paused") && <span className="tag blocked">{order.status === "paused" ? "Pausado" : "Bloqueado"}</span>}</div></div>
+    <h3>{order.client_name}</h3><p className="order-service">{order.description}</p>
+    <div className="order-operational-meta"><span>{ageLabel}</span>{ageLabel.startsWith("2d") || ageInDays >= 2 ? <b>Sem movimentação</b> : null}</div>
+    <div className="order-responsible" title={`Responsável: ${orderResponsibleName(order)}`}><span>{initials(orderResponsibleName(order))}</span><div><small>RESPONSÁVEL</small><b>{orderResponsibleName(order)}</b></div></div>
+    <div className={`due order-deadlines ${dueLabel(order.delivery_date).startsWith("Atrasado") ? "late" : ""}`}><span>Inst./entrega: <b>{orderTargetDateLabel(order)}</b></span><small>Produção: {dueLabel(order.delivery_date)}</small></div>
+    <footer className="kanban-card-icon-actions">
+      <button type="button" title="Histórico" aria-label={`Abrir histórico da OP ${order.op_number}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "history"); }}><AppIcon name="history" /></button>
+      <button type="button" title="Comentários" aria-label={`Abrir comentários da OP ${order.op_number}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "comments"); }}><AppIcon name="comments" />{Boolean(commentCount) && <span>{commentCount}</span>}</button>
+      {canOperate && <button type="button" title="Mover setor" aria-label={`Mover OP ${order.op_number} de setor`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onMoveOrder(order); }}><AppIcon name="move" /></button>}
+      {canOperate && <button type="button" className={`status-${order.status}`} title="Alterar status" aria-label={`Alterar status da OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onChangeStatus(order); }}><AppIcon name={order.status === "paused" ? "pause" : "status"} /></button>}
+      {canOperate && <button type="button" className="finish-icon" title="Finalizar ordem" aria-label={`Finalizar OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onFinishOrder(order); }}><AppIcon name="check" /></button>}
+    </footer>
+  </div>;
+}
+
+type KanbanStack = {
+  key: string;
+  parentOp: string;
+  orders: Order[];
+};
+
+function orderFamilyKey(opNumber: string) {
+  const normalized = opNumber.trim();
+  const subOrderMatch = normalized.match(/^(.+?)-([1-9]\d{0,2})$/);
+  return {
+    parentOp: subOrderMatch?.[1]?.trim() || normalized,
+    childNumber: subOrderMatch ? Number(subOrderMatch[2]) : null,
+  };
+}
+
+function groupLaneOrdersAsStacks(laneKey: string, orders: Order[]): KanbanStack[] {
+  const buckets = new Map<string, KanbanStack>();
+  orders.forEach((order) => {
+    const family = orderFamilyKey(order.op_number);
+    const key = `${laneKey}:${family.parentOp.toLocaleUpperCase("pt-BR")}`;
+    const current = buckets.get(key);
+    if (current) current.orders.push(order);
+    else buckets.set(key, { key, parentOp: family.parentOp, orders: [order] });
+  });
+  return [...buckets.values()];
+}
+
+function compareStackChildren(first: Order, second: Order) {
+  const firstKey = orderFamilyKey(first.op_number);
+  const secondKey = orderFamilyKey(second.op_number);
+  if (firstKey.childNumber !== null && secondKey.childNumber !== null) return firstKey.childNumber - secondKey.childNumber;
+  if (firstKey.childNumber === null && secondKey.childNumber !== null) return -1;
+  if (firstKey.childNumber !== null && secondKey.childNumber === null) return 1;
+  return first.op_number.localeCompare(second.op_number, "pt-BR", { numeric: true });
+}
+
+type KanbanOrderStackProps = {
+  stack: KanbanStack;
+  expanded: boolean;
+  onToggle: () => void;
+  orderCardProps: Omit<KanbanOrderCardProps, "order" | "commentCount" | "stackedChild">;
+  commentCounts: Record<string, number>;
+};
+
+function KanbanOrderStack({ stack, expanded, onToggle, orderCardProps, commentCounts }: KanbanOrderStackProps) {
+  const orders = [...stack.orders].sort(compareStackChildren);
+  const firstOrder = orders[0];
+  const clients = [...new Set(orders.map((order) => order.client_name.trim()).filter(Boolean))];
+  const responsibles = [...new Set(orders.map(orderResponsibleName))];
+  const nearestOrder = [...orders].sort((first, second) => targetDateForOrder(first.installation_scheduled_at, first.delivery_date).localeCompare(targetDateForOrder(second.installation_scheduled_at, second.delivery_date)))[0];
+  const lateCount = orders.filter((order) => dueLabel(order.delivery_date).startsWith("Atrasado")).length;
+  const pausedCount = orders.filter((order) => order.status === "paused" || order.blocked).length;
+  const totalComments = orders.reduce((total, order) => total + (commentCounts[order.id] || 0), 0);
+  const clientLabel = clients.length === 1 ? clients[0] : `${clients.length} clientes`;
+  const responsibleLabel = responsibles.length === 1 ? responsibles[0] : `${responsibles.length} responsáveis`;
+
+  return <section className={`kanban-order-stack ${expanded ? "expanded" : "collapsed"}`}>
+    <article className={`order kanban-stack-summary ${lateCount ? "stack-has-late" : ""} ${pausedCount ? "blocked-order" : ""}`} onClick={onToggle}>
+      <button type="button" className="kanban-stack-toggle" aria-expanded={expanded} aria-label={`${expanded ? "Recolher" : "Abrir"} pilha da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onToggle(); }}><AppIcon name={expanded ? "chevronDown" : "chevronRight"} /></button>
+      <OrderThumbnail order={firstOrder} url={orderCardProps.cardImageUrl(firstOrder)} onVisible={orderCardProps.onThumbnailVisible} onPreview={orderCardProps.onPreview} />
+      <div className="order-top"><b>OP {stack.parentOp}</b><div className="order-badges"><span className="tag stack-count">{orders.length} itens</span>{lateCount > 0 && <span className="tag urgent">{lateCount} atrasado{lateCount === 1 ? "" : "s"}</span>}{pausedCount > 0 && <span className="tag blocked">{pausedCount} pausado{pausedCount === 1 ? "" : "s"}</span>}</div></div>
+      <h3>{clientLabel}</h3><p className="order-service">Subpedidos no mesmo setor e status.</p>
+      <div className="kanban-stack-metrics"><span><small>ITENS</small><b>{orders.length}</b></span><span><small>PRÓXIMO PRAZO</small><b>{orderTargetDateLabel(nearestOrder)}</b></span><span><small>RESPONSÁVEL</small><b>{responsibleLabel}</b></span></div>
+      <div className={`due order-deadlines ${lateCount ? "late" : ""}`}><span>Produção mais próxima: <b>{dueLabel(nearestOrder.delivery_date)}</b></span><small>{totalComments ? `${totalComments} comentário${totalComments === 1 ? "" : "s"} na pilha` : "Sem comentários"}</small></div>
+      <footer className="kanban-stack-footer"><span>{expanded ? "Recolher subpedidos" : "Abrir subpedidos"}</span><AppIcon name={expanded ? "chevronDown" : "chevronRight"} /></footer>
+    </article>
+    {expanded && <div className="kanban-stack-children" aria-label={`Subpedidos da OP ${stack.parentOp}`}>{orders.map((order) => <KanbanOrderCard key={order.id} order={order} commentCount={commentCounts[order.id] || 0} stackedChild {...orderCardProps} />)}</div>}
+  </section>;
+}
+
 export type KanbanViewProps = {
   activeOrderCounts: { orders: number; suborders: number };
   activeOrders: Order[];
@@ -198,6 +324,18 @@ export function KanbanView(props: KanbanViewProps) {
   });
 
   useEffect(() => { window.localStorage.setItem("pcp-kanban-display-mode", displayMode); }, [displayMode]);
+
+  // As pilhas começam recolhidas em toda nova carga. O estado não é persistido
+  // em localStorage nem no banco, mas permanece durante atualizações Realtime.
+  const [expandedStacks, setExpandedStacks] = useState<Set<string>>(() => new Set());
+  function toggleStack(stackKey: string) {
+    setExpandedStacks((current) => {
+      const next = new Set(current);
+      if (next.has(stackKey)) next.delete(stackKey);
+      else next.add(stackKey);
+      return next;
+    });
+  }
 
   const groupedOrders = useMemo(() => {
     const groups = new Map<string, Order[]>();
@@ -331,22 +469,24 @@ export function KanbanView(props: KanbanViewProps) {
             const laneOrders = groupedOrders.get(`${sector.id}:${status}`) || [];
             return <div className={`lane ${dragOverLane === `${sector.id}:${status}` ? "drag-over" : ""}`} key={status} aria-label={`${sector.name} — ${status}`} onDragOver={(event) => { if (!canOperate) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; onDragOverLane(`${sector.id}:${status}`); }} onDrop={() => onDrop(sector.id, status)}>
               <div className="lane-head"><b><i className={`dot ${statusDotClass(status)}`} />{status}</b><span>{laneOrders.length}</span></div>
-              {laneOrders.map((order) => <div draggable={canOperate && busyOrderId !== order.id} aria-disabled={!canOperate} onDragStart={(event) => { if (!canOperate) { event.preventDefault(); return; } event.dataTransfer.effectAllowed = "move"; onDragStart(order.id); }} onDragEnd={onDragEnd} onClick={() => onOpenOrder(order, "history")} className={`order ${priorityLabel[order.priority].toLowerCase()} ${isPdfPageThumbnailPath(order.main_image_path) ? "pdf-page-order" : ""} ${order.blocked || order.status === "paused" ? "blocked-order" : ""}`} key={order.id}>
-                {isAdmin && <button type="button" className="delete-order-button" aria-label={`Apagar OP ${order.op_number}`} title="Apagar pedido" disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onDeleteOrder(order); }}><AppIcon name="trash" /></button>}
-                <OrderThumbnail order={order} url={cardImageUrl(order)} onVisible={onThumbnailVisible} onPreview={onPreview} />
-                <div className="order-top"><b>OP {order.op_number}</b><div className="order-badges"><span className={`tag ${priorityLabel[order.priority].toLowerCase()}`}>{priorityLabel[order.priority]}</span>{(order.blocked || order.status === "paused") && <span className="tag blocked">{order.status === "paused" ? "Pausado" : "Bloqueado"}</span>}</div></div>
-                <h3>{order.client_name}</h3><p className="order-service">{order.description}</p>
-                <div className="order-operational-meta"><span>{sectorAgeLabel(order)}</span>{sectorAgeLabel(order).startsWith("2d") || Number(sectorAgeLabel(order).match(/^(\d+)d/)?.[1] || 0) >= 2 ? <b>Sem movimentação</b> : null}</div>
-                <div className="order-responsible" title={`Responsável: ${orderResponsibleName(order)}`}><span>{initials(orderResponsibleName(order))}</span><div><small>RESPONSÁVEL</small><b>{orderResponsibleName(order)}</b></div></div>
-                <div className={`due order-deadlines ${dueLabel(order.delivery_date).startsWith("Atrasado") ? "late" : ""}`}><span>Inst./entrega: <b>{orderTargetDateLabel(order)}</b></span><small>Produção: {dueLabel(order.delivery_date)}</small></div>
-                <footer className="kanban-card-icon-actions">
-                  <button type="button" title="Histórico" aria-label={`Abrir histórico da OP ${order.op_number}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "history"); }}><AppIcon name="history" /></button>
-                  <button type="button" title="Comentários" aria-label={`Abrir comentários da OP ${order.op_number}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "comments"); }}><AppIcon name="comments" />{Boolean(commentCounts[order.id]) && <span>{commentCounts[order.id]}</span>}</button>
-                  {canOperate && <button type="button" title="Mover setor" aria-label={`Mover OP ${order.op_number} de setor`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onMoveOrder(order); }}><AppIcon name="move" /></button>}
-                  {canOperate && <button type="button" className={`status-${order.status}`} title="Alterar status" aria-label={`Alterar status da OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onChangeStatus(order); }}><AppIcon name={order.status === "paused" ? "pause" : "status"} /></button>}
-                  {canOperate && <button type="button" className="finish-icon" title="Finalizar ordem" aria-label={`Finalizar OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onFinishOrder(order); }}><AppIcon name="check" /></button>}
-                </footer>
-              </div>)}
+              {groupLaneOrdersAsStacks(`${sector.id}:${status}`, laneOrders).map((stack) => {
+                const sharedOrderCardProps: Omit<KanbanOrderCardProps, "order" | "commentCount" | "stackedChild"> = {
+                  canOperate, isAdmin, busyOrderId, cardImageUrl, onDragStart, onDragEnd, onOpenOrder,
+                  onDeleteOrder, onPreview, onThumbnailVisible, onMoveOrder, onChangeStatus, onFinishOrder,
+                };
+                if (stack.orders.length === 1) {
+                  const order = stack.orders[0];
+                  return <KanbanOrderCard key={order.id} order={order} commentCount={commentCounts[order.id] || 0} {...sharedOrderCardProps} />;
+                }
+                return <KanbanOrderStack
+                  key={stack.key}
+                  stack={stack}
+                  expanded={expandedStacks.has(stack.key)}
+                  onToggle={() => toggleStack(stack.key)}
+                  orderCardProps={sharedOrderCardProps}
+                  commentCounts={commentCounts}
+                />;
+              })}
               {!laneOrders.length && <div className="empty-lane">{canOperate ? "Solte um pedido aqui" : "Nenhum pedido"}</div>}
             </div>;
           })}</div>
