@@ -1,0 +1,274 @@
+/* Publicolor PCP 3.4.6 · pilhas do Kanban mais compactas e discretas */
+
+.kanban-order-stack{
+  margin:0 0 14px;
+  padding:0 0 8px;
+}
+
+.kanban-order-stack.collapsed::before,
+.kanban-order-stack.collapsed::after{
+  border-radius:18px;
+  border-color:rgba(132,82,151,.12);
+  box-shadow:0 4px 12px rgba(70,30,83,.06);
+}
+
+.kanban-order-stack.collapsed::before{
+  left:7px;
+  right:7px;
+  top:6px;
+  bottom:4px;
+  transform:translateY(4px) rotate(-.2deg);
+  background:#faf6fb;
+}
+
+.kanban-order-stack.collapsed::after{
+  left:13px;
+  right:13px;
+  top:11px;
+  bottom:0;
+  transform:translateY(6px) rotate(.25deg);
+  background:#f3ecf5;
+}
+
+.kanban-stack-summary{
+  gap:10px;
+  border-radius:18px!important;
+  padding:12px 12px 10px!important;
+  box-shadow:0 8px 20px rgba(84,34,95,.08)!important;
+  background:#fff!important;
+}
+
+.kanban-stack-summary::before{
+  top:-8px;
+  left:12px;
+  padding:3px 8px;
+  font-size:7px;
+  letter-spacing:.1em;
+  box-shadow:0 3px 8px rgba(94,33,116,.18);
+}
+
+.kanban-stack-summary .kanban-stack-toggle{
+  top:10px;
+  right:10px;
+  width:36px;
+  height:36px;
+  border-radius:12px;
+  box-shadow:none;
+}
+
+.kanban-stack-thumbnail{
+  padding:0;
+}
+
+.kanban-stack-thumbnail .order-thumbnail{
+  width:min(100%, 160px);
+  padding:7px;
+  border-radius:14px;
+  background:#f8f4f9;
+  box-shadow:inset 0 0 0 1px rgba(127,82,146,.06);
+}
+
+.kanban-stack-thumbnail .order-thumbnail img,
+.kanban-stack-thumbnail .order-thumbnail .pdf-page-thumbnail,
+.kanban-stack-thumbnail .order-thumbnail .thumbnail-placeholder{
+  border-radius:10px;
+}
+
+.kanban-stack-heading{ gap:4px; }
+
+.kanban-stack-op-row{ gap:8px; }
+
+.kanban-stack-op-row b{
+  font-size:16px;
+  line-height:1.05;
+}
+
+.kanban-stack-summary h3{
+  font-size:16px;
+  line-height:1.15;
+  letter-spacing:-.01em;
+}
+
+.kanban-stack-caption{
+  font-size:11px;
+  line-height:1.3;
+}
+
+.kanban-stack-summary .order-badges{ gap:5px; }
+
+.kanban-stack-summary .tag{
+  padding:3px 8px;
+  font-size:9px;
+  letter-spacing:.01em;
+}
+
+.kanban-stack-metrics{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+
+.kanban-stack-metrics span{
+  flex:1 1 31%;
+  min-width:0;
+  gap:2px;
+  padding:8px 9px;
+  border-radius:12px;
+}
+
+.kanban-stack-metrics small{
+  font-size:9px;
+  letter-spacing:.06em;
+}
+
+.kanban-stack-metrics b{
+  font-size:12px;
+  line-height:1.2;
+}
+
+.kanban-stack-alert{
+  gap:2px;
+  padding:8px 10px;
+  border-radius:12px;
+  font-size:11px;
+}
+
+.kanban-stack-alert small{
+  font-size:10px;
+}
+
+.kanban-stack-icon-actions{
+  gap:6px;
+  padding:8px;
+  border-radius:14px;
+  background:#f5eef7;
+}
+
+.kanban-stack-icon-actions > button{
+  height:36px;
+  border-radius:11px;
+}
+
+.kanban-stack-icon-actions > button .app-icon{
+  width:16px;
+  height:16px;
+}
+
+.kanban-stack-icon-actions .stack-expand-action{
+  box-shadow:none;
+}
+
+.kanban-stack-collective-label{
+  margin-top:0;
+  font-size:9px;
+}
+
+@media (max-width: 768px){
+  .kanban-stack-summary{
+    padding:11px 11px 9px!important;
+  }
+
+  .kanban-stack-summary h3{
+    font-size:15px;
+  }
+
+  .kanban-stack-op-row b{
+    font-size:15px;
+  }
+
+  .kanban-stack-metrics{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+
+  .kanban-stack-metrics span{
+    flex:none;
+    padding:7px 8px;
+  }
+}
+
+@media (max-width: 480px){
+  .kanban-order-stack{
+    margin-bottom:12px;
+    padding-bottom:6px;
+  }
+
+  .kanban-stack-summary{
+    gap:8px;
+    padding:10px 10px 9px!important;
+    border-radius:16px!important;
+  }
+
+  .kanban-stack-summary::before{
+    left:10px;
+  }
+
+  .kanban-stack-summary .kanban-stack-toggle{
+    width:34px;
+    height:34px;
+  }
+
+  .kanban-stack-thumbnail .order-thumbnail{
+    max-width:148px;
+    padding:6px;
+  }
+
+  .kanban-stack-op-row{
+    align-items:flex-start;
+  }
+
+  .kanban-stack-summary h3{
+    font-size:14px;
+  }
+
+  .kanban-stack-summary .tag{
+    padding:3px 7px;
+    font-size:8px;
+  }
+
+  .kanban-stack-metrics{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:5px;
+  }
+
+  .kanban-stack-metrics span{
+    padding:6px 7px;
+    border-radius:10px;
+  }
+
+  .kanban-stack-metrics small{
+    font-size:8px;
+  }
+
+  .kanban-stack-metrics b{
+    font-size:11px;
+  }
+
+  .kanban-stack-alert{
+    padding:7px 8px;
+    font-size:10px;
+  }
+
+  .kanban-stack-alert small{
+    font-size:9px;
+  }
+
+  .kanban-stack-icon-actions{
+    gap:5px;
+    padding:7px;
+  }
+
+  .kanban-stack-icon-actions > button{
+    height:34px;
+    border-radius:10px;
+  }
+
+  .kanban-stack-icon-actions > button .app-icon{
+    width:15px;
+    height:15px;
+  }
+
+  .kanban-stack-collective-label{
+    font-size:8px;
+  }
+}
