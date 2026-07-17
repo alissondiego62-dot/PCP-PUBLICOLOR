@@ -272,11 +272,16 @@ function KanbanOrderStack({
   return <section className={`kanban-order-stack ${expanded ? "expanded" : "collapsed"}`}>
     <article className={`order kanban-stack-summary ${lateCount ? "stack-has-late" : ""} ${pausedCount ? "blocked-order" : ""}`} onClick={onToggle}>
       <button type="button" className="kanban-stack-toggle" aria-expanded={expanded} aria-label={`${expanded ? "Recolher" : "Abrir"} pilha da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onToggle(); }}><AppIcon name={expanded ? "chevronDown" : "chevronRight"} /></button>
-      <OrderThumbnail order={firstOrder} url={orderCardProps.cardImageUrl(firstOrder)} onVisible={orderCardProps.onThumbnailVisible} onPreview={orderCardProps.onPreview} />
-      <div className="order-top"><b>OP {stack.parentOp}</b><div className="order-badges"><span className="tag stack-count">{orders.length} itens</span>{lateCount > 0 && <span className="tag urgent">{lateCount} atrasado{lateCount === 1 ? "" : "s"}</span>}{pausedCount > 0 && <span className="tag blocked">{pausedCount} pausado{pausedCount === 1 ? "" : "s"}</span>}</div></div>
-      <h3>{clientLabel}</h3><p className="order-service">Subpedidos no mesmo setor e status.</p>
-      <div className="kanban-stack-metrics"><span><small>ITENS</small><b>{orders.length}</b></span><span><small>PRÓXIMO PRAZO</small><b>{orderTargetDateLabel(nearestOrder)}</b></span><span><small>RESPONSÁVEL</small><b>{responsibleLabel}</b></span></div>
-      <div className={`due order-deadlines ${lateCount ? "late" : ""}`}><span>Produção mais próxima: <b>{dueLabel(nearestOrder.delivery_date)}</b></span><small>{totalComments ? `${totalComments} comentário${totalComments === 1 ? "" : "s"} na pilha` : "Sem comentários"}</small></div>
+      <div className="kanban-stack-thumbnail">
+        <OrderThumbnail order={firstOrder} url={orderCardProps.cardImageUrl(firstOrder)} onVisible={orderCardProps.onThumbnailVisible} onPreview={orderCardProps.onPreview} />
+      </div>
+      <div className="kanban-stack-heading">
+        <div className="kanban-stack-op-row"><b>OP {stack.parentOp}</b><div className="order-badges"><span className="tag stack-count">{orders.length} itens</span>{lateCount > 0 && <span className="tag urgent">{lateCount} atrasado{lateCount === 1 ? "" : "s"}</span>}{pausedCount > 0 && <span className="tag blocked">{pausedCount} pausado{pausedCount === 1 ? "" : "s"}</span>}</div></div>
+        <h3>{clientLabel}</h3>
+        <p className="kanban-stack-caption">Subpedidos no mesmo setor e status.</p>
+      </div>
+      <div className="kanban-stack-metrics"><span><small>Itens</small><b>{orders.length}</b></span><span><small>Próximo prazo</small><b>{orderTargetDateLabel(nearestOrder)}</b></span><span><small>Responsável</small><b>{responsibleLabel}</b></span></div>
+      <div className={`kanban-stack-alert ${lateCount ? "late" : ""}`}><span>Produção mais próxima: <b>{dueLabel(nearestOrder.delivery_date)}</b></span><small>{totalComments ? `${totalComments} comentário${totalComments === 1 ? "" : "s"} na pilha` : "Sem comentários"}</small></div>
       <footer className="kanban-stack-icon-actions" aria-label={`Ações coletivas da OP ${stack.parentOp}`}>
         <button type="button" className="stack-expand-action" title={expanded ? "Recolher pedidos" : "Abrir pedidos"} aria-label={`${expanded ? "Recolher" : "Abrir"} pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onToggle(); }}><AppIcon name={expanded ? "chevronDown" : "chevronRight"} /></button>
         <button type="button" title="Históricos da pilha" aria-label={`Visualizar históricos dos pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackViewer(stack, "history"); }}><AppIcon name="history" /></button>
@@ -285,7 +290,7 @@ function KanbanOrderStack({
         {orderCardProps.canOperate && <button type="button" className={`status-${firstOrder.status}`} title={`Alterar status de ${orders.length} pedidos`} aria-label={`Alterar status de todos os pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackAction(stack, "status"); }}><AppIcon name={firstOrder.status === "paused" ? "pause" : "status"} /></button>}
         {orderCardProps.canFinalize && <button type="button" className="finish-icon" title={`Finalizar ${orders.length} pedidos`} aria-label={`Finalizar todos os pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackAction(stack, "finish"); }}><AppIcon name="check" /></button>}
       </footer>
-      <div className="kanban-stack-collective-label">{orders.length} pedidos · ações nos itens selecionados</div>
+      <div className="kanban-stack-collective-label">{orders.length} pedidos · ações coletivas disponíveis</div>
     </article>
     {expanded && <div className="kanban-stack-children" aria-label={`Subpedidos da OP ${stack.parentOp}`}>{orders.map((order) => <KanbanOrderCard key={order.id} order={order} commentCount={commentCounts[order.id] || 0} stackedChild {...orderCardProps} />)}</div>}
   </section>;
