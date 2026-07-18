@@ -27,6 +27,7 @@ import "./release-3-4-3.css";
 import "./release-3-4-4.css";
 import "./release-3-4-5.css";
 import "./release-3-4-6.css";
+import "./release-3-5-0.css";
 import { PwaInstallPrompt } from "@/components/PwaInstallPrompt";
 import { PwaUpdatePrompt } from "@/components/PwaUpdatePrompt";
 

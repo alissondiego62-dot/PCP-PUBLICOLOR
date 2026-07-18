@@ -1,70 +1,28 @@
-# Publicolor PCP 3.4.4
+# Publicolor PCP 3.5.0 Revisado
 
-Sistema operacional de PCP para pedidos, produção, agenda, atividades, compras, clientes, usuários, arquivos e integrações da Publicolor.
+Sistema operacional de PCP da Publicolor para pedidos, produção, agenda, compras, clientes, usuários e integrações.
 
+## Fluxo principal desta versão
 
-## Ações coletivas nas pilhas — 3.4.4
+`Produção → Produção concluída → Agendamento obrigatório → Instalação`
 
-- A pilha recolhida agora mostra camadas mais visíveis, selo `PILHA` e barra permanente de ações.
-- Histórico e comentários abrem uma lista dos subpedidos para escolher qual OS consultar.
-- Mover setor, alterar status e finalizar podem ser aplicados a todos os itens ou somente aos subpedidos selecionados.
-- Toda alteração coletiva usa uma única operação de banco e atualiza os cartões sem recarregar a página.
-- Cada subpedido continua com suas ações individuais quando a pilha é expandida.
-- As pilhas continuam sempre recolhidas após recarregar a página.
-- Não há alteração de banco de dados nesta versão.
-
-
-## Pilhas de subpedidos no Kanban — 3.4.3
-
-- Subpedidos da mesma OP são agrupados quando estão no mesmo setor e na mesma faixa de status.
-- A pilha mostra quantidade de itens, prazo mais próximo, atrasos, pausas, responsável e comentários consolidados.
-- Ao abrir a pilha, cada subpedido mantém suas ações individuais de histórico, comentários, setor, status e finalização.
-- As pilhas sempre iniciam recolhidas após atualizar ou reabrir a página. O estado de expansão não é salvo no navegador nem no banco.
-- Nenhuma alteração de banco de dados é necessária nesta versão.
-
-## Destaques da versão
-
-- formulário de materiais responsivo, sem campos ou botões cortados;
-- edição completa e sincronizada dos materiais pela OS e por Atividades e Compras;
-- todas as atividades do grupo Compras usando o mesmo padrão operacional;
-- setor e status da Produção com salvamento automático;
-- correção do cliente selecionado no Resumo da OS;
-- ações do Kanban por ícones: histórico, comentários, mover, status e finalizar;
-- filtro rápido `Pausados` na página de Pedidos;
-- usuários responsivos, editáveis e com histórico de acesso;
-- matriz de permissões para Administrador, Gerente, Operador e Visualizador;
-- exceções individuais de permissão;
-- auditoria de mudanças administrativas;
-- cache PWA atualizado para 3.4.4.
-
-## Páginas
-
-- Dashboard — página inicial;
-- Produção — Kanban responsivo;
-- Pedidos;
-- Concluídos;
-- Agenda;
-- Atividades e Compras;
-- Clientes;
-- Usuários;
-- Configurações.
+- Configuração dos setores em **Configurações → Kanban**.
+- Criação, edição, reordenação, ativação, inativação e exclusão segura de setores.
+- **Produção concluída** e **Instalação** sem faixas de status.
+- Painel **Pendentes de agendamento** na Agenda.
+- Data e hora obrigatórias antes da entrada em Instalação.
+- Sincronização entre Kanban, Agenda e histórico.
+- Agendamento individual ou coletivo de pilhas.
+- Cancelamento devolve o pedido para Produção concluída.
 
 ## Banco de dados
 
-Aplique primeiro em homologação:
+Aplique em homologação:
 
-1. `SQL-ATUALIZACAO-PUBLICOLOR-3.4.2.sql`
-2. `SQL-VALIDAR-PUBLICOLOR-3.4.2.sql`
+1. `SQL-ATUALIZACAO-PUBLICOLOR-3.5.0-REVISADO.sql`
+2. `SQL-VALIDAR-PUBLICOLOR-3.5.0-REVISADO.sql`
 
-O SQL é cumulativo. Não execute posteriormente os SQLs antigos separadamente.
-
-## Documentação
-
-- `COMO-ATUALIZAR-PUBLICOLOR-3.4.2.txt`
-- `VALIDACAO-PUBLICOLOR-3.4.2.txt`
-- `docs/ATUALIZACAO-3.4.2.md`
-- `docs/REVISAO-E-SUGESTOES-3.4.2.md`
-- `docs/AUDITORIA-FINAL-3.4.0.md`
+O SQL cumulativo inclui as correções anteriores necessárias. Consulte `COMO-ATUALIZAR-PUBLICOLOR-3.5.0-REVISADO.txt`.
 
 ## Validação local
 
@@ -75,6 +33,3 @@ pnpm validate
 ```
 
 Requisitos: Node.js 24.x e pnpm 11.12.0.
-## Correção SQL 3.4.2
-
-O pacote inclui a criação idempotente de `public.system_settings` antes do registro `database_release`, corrigindo o erro 42P01 da atualização cumulativa.

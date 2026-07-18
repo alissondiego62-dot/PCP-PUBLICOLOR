@@ -4,7 +4,20 @@ export type Priority = "low" | "normal" | "high" | "urgent";
 export type AppRole = "admin" | "manager" | "production" | "viewer";
 export type InstallationStatus = "pending" | "scheduled" | "in_progress" | "completed" | "cancelled";
 
-export type Sector = { id: string; name: string; position: number; active: boolean; wip_limit?: number | null };
+export type Sector = {
+  id: string;
+  name: string;
+  position: number;
+  active: boolean;
+  wip_limit?: number | null;
+  uses_status?: boolean;
+  requires_scheduling?: boolean;
+  show_in_agenda?: boolean;
+  allow_manual_move?: boolean;
+  special_type?: "production_completed" | "installation" | null;
+  color?: string | null;
+  icon?: string | null;
+};
 
 export type Client = {
   id: string;

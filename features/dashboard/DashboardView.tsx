@@ -12,6 +12,7 @@ type DashboardViewProps = {
   activeOrders: Order[];
   completedOrders: Order[];
   installationOrders: Order[];
+  productionCompletedSectorId: string | null;
   sectorReport: Array<{ sector: Sector; count: number }>;
   largestSectorCount: number;
   currentUserId: string;
@@ -81,7 +82,7 @@ function orderAgeHours(order: Order) {
 }
 
 export function DashboardView(props: DashboardViewProps) {
-  const { activeOrderCounts, activeOrders, completedOrders, installationOrders, sectorReport, largestSectorCount, currentUserId, isOnline, onNavigate, onApplyKanbanMetric, onOpenOrder } = props;
+  const { activeOrderCounts, activeOrders, completedOrders, installationOrders, productionCompletedSectorId, sectorReport, largestSectorCount, currentUserId, isOnline, onNavigate, onApplyKanbanMetric, onOpenOrder } = props;
   const [summary, setSummary] = useState<DashboardSummary>(EMPTY_SUMMARY);
   const [history, setHistory] = useState<HistoryDashboardRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,11 +127,12 @@ export function DashboardView(props: DashboardViewProps) {
     const blocked = activeOrders.filter((order) => order.blocked || order.status === "paused");
     const withoutResponsible = activeOrders.filter((order) => !order.consultant_name?.trim());
     const withoutMovement = activeOrders.filter((order) => orderAgeHours(order) >= 48);
+    const productionCompleted = activeOrders.filter((order) => Boolean(productionCompletedSectorId) && order.sector_id === productionCompletedSectorId);
     const installationToday = installationOrders.filter((order) => order.installation_scheduled_at && dateKeyManaus(order.installation_scheduled_at) === today);
     const futureInstallations = installationOrders.filter((order) => order.installation_scheduled_at && dateKeyManaus(order.installation_scheduled_at) >= today).slice(0, 6);
     const pastInstallations = installationOrders.filter((order) => order.installation_scheduled_at && dateKeyManaus(order.installation_scheduled_at) < today && order.installation_status !== "completed");
-    return { late, productionToday, inProgress, blocked, withoutResponsible, withoutMovement, installationToday, futureInstallations, pastInstallations };
-  }, [activeOrders, installationOrders, today]);
+    return { late, productionToday, inProgress, blocked, withoutResponsible, withoutMovement, productionCompleted, installationToday, futureInstallations, pastInstallations };
+  }, [activeOrders, installationOrders, productionCompletedSectorId, today]);
 
   const fallbackSummary = useMemo<DashboardSummary>(() => ({
     ...EMPTY_SUMMARY,
@@ -163,6 +165,7 @@ export function DashboardView(props: DashboardViewProps) {
       <Kpi icon="tasks" tone="warning" label="OS aguardando materiais" value={metrics.unavailable_order_count} detail={`${metrics.unavailable_material_count} itens indisponíveis`} onClick={() => onNavigate("activities")} />
       <Kpi icon="alert" tone="danger" label="Atrasados" value={operational.late.length} detail="Prazo de produção vencido" onClick={() => onApplyKanbanMetric("late")} />
       <Kpi icon="calendar" tone="warning" label="Produção hoje" value={operational.productionToday.length} detail="Prazo interno do dia" onClick={() => onApplyKanbanMetric("today")} />
+      <Kpi icon="check" label="Produção concluída" value={operational.productionCompleted.length} detail="Pendentes de agendamento" onClick={() => onNavigate("installation")} />
       <Kpi icon="calendar" label="Instalações hoje" value={operational.installationToday.length} detail="Entrega ou instalação" onClick={() => onNavigate("installation")} />
       <Kpi icon="alert" tone="danger" label="Bloqueados/pausados" value={operational.blocked.length} detail="Exigem intervenção" onClick={() => onApplyKanbanMetric("blocked")} />
     </div>

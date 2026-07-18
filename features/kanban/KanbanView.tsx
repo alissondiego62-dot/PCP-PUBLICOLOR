@@ -163,13 +163,14 @@ type KanbanOrderCardProps = {
   onMoveOrder: (order: Order) => void;
   onChangeStatus: (order: Order) => void;
   onFinishOrder: (order: Order) => void;
+  showStatusAction: boolean;
   stackedChild?: boolean;
 };
 
 function KanbanOrderCard({
   order, canOperate, canFinalize, isAdmin, busyOrderId, commentCount, cardImageUrl,
   onDragStart, onDragEnd, onOpenOrder, onDeleteOrder, onPreview,
-  onThumbnailVisible, onMoveOrder, onChangeStatus, onFinishOrder, stackedChild = false,
+  onThumbnailVisible, onMoveOrder, onChangeStatus, onFinishOrder, showStatusAction, stackedChild = false,
 }: KanbanOrderCardProps) {
   const ageLabel = sectorAgeLabel(order);
   const ageInDays = Number(ageLabel.match(/^(\d+)d/)?.[1] || 0);
@@ -197,7 +198,7 @@ function KanbanOrderCard({
       <button type="button" title="Histórico" aria-label={`Abrir histórico da OP ${order.op_number}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "history"); }}><AppIcon name="history" /></button>
       <button type="button" title="Comentários" aria-label={`Abrir comentários da OP ${order.op_number}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenOrder(order, "comments"); }}><AppIcon name="comments" />{Boolean(commentCount) && <span>{commentCount}</span>}</button>
       {canOperate && <button type="button" title="Mover setor" aria-label={`Mover OP ${order.op_number} de setor`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onMoveOrder(order); }}><AppIcon name="move" /></button>}
-      {canOperate && <button type="button" className={`status-${order.status}`} title="Alterar status" aria-label={`Alterar status da OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onChangeStatus(order); }}><AppIcon name={order.status === "paused" ? "pause" : "status"} /></button>}
+      {canOperate && showStatusAction && <button type="button" className={`status-${order.status}`} title="Alterar status" aria-label={`Alterar status da OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onChangeStatus(order); }}><AppIcon name={order.status === "paused" ? "pause" : "status"} /></button>}
       {canFinalize && <button type="button" className="finish-icon" title="Finalizar ordem" aria-label={`Finalizar OP ${order.op_number}`} disabled={busyOrderId === order.id} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onFinishOrder(order); }}><AppIcon name="check" /></button>}
     </footer>
   </div>;
@@ -287,7 +288,7 @@ function KanbanOrderStack({
         <button type="button" title="Históricos da pilha" aria-label={`Visualizar históricos dos pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackViewer(stack, "history"); }}><AppIcon name="history" /></button>
         <button type="button" title="Comentários da pilha" aria-label={`Visualizar comentários dos pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackViewer(stack, "comments"); }}><AppIcon name="comments" />{Boolean(totalComments) && <span>{totalComments}</span>}</button>
         {orderCardProps.canOperate && <button type="button" title={`Mover ${orders.length} pedidos`} aria-label={`Mover todos os pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackAction(stack, "move"); }}><AppIcon name="move" /></button>}
-        {orderCardProps.canOperate && <button type="button" className={`status-${firstOrder.status}`} title={`Alterar status de ${orders.length} pedidos`} aria-label={`Alterar status de todos os pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackAction(stack, "status"); }}><AppIcon name={firstOrder.status === "paused" ? "pause" : "status"} /></button>}
+        {orderCardProps.canOperate && orderCardProps.showStatusAction && <button type="button" className={`status-${firstOrder.status}`} title={`Alterar status de ${orders.length} pedidos`} aria-label={`Alterar status de todos os pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackAction(stack, "status"); }}><AppIcon name={firstOrder.status === "paused" ? "pause" : "status"} /></button>}
         {orderCardProps.canFinalize && <button type="button" className="finish-icon" title={`Finalizar ${orders.length} pedidos`} aria-label={`Finalizar todos os pedidos da OP ${stack.parentOp}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onOpenStackAction(stack, "finish"); }}><AppIcon name="check" /></button>}
       </footer>
       <div className="kanban-stack-collective-label">{orders.length} pedidos · ações coletivas disponíveis</div>
@@ -460,7 +461,8 @@ export function KanbanView(props: KanbanViewProps) {
   const groupedOrders = useMemo(() => {
     const groups = new Map<string, Order[]>();
     filtered.forEach((order) => {
-      const statuses = order.status === "paused" ? ["Aguardando"] : Object.entries(statusToDb).filter(([, value]) => value === order.status).map(([label]) => label);
+      const sector = activeSectors.find((item) => item.id === order.sector_id);
+      const statuses = sector?.uses_status === false ? ["Aguardando"] : order.status === "paused" ? ["Aguardando"] : Object.entries(statusToDb).filter(([, value]) => value === order.status).map(([label]) => label);
       const status = statuses[0] || "Aguardando";
       const key = `${order.sector_id}:${status}`;
       const bucket = groups.get(key) || [];
@@ -468,7 +470,7 @@ export function KanbanView(props: KanbanViewProps) {
       groups.set(key, bucket);
     });
     return groups;
-  }, [filtered]);
+  }, [filtered, activeSectors]);
 
   const sectorCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -585,14 +587,17 @@ export function KanbanView(props: KanbanViewProps) {
         const overWip = Boolean(sector.wip_limit && sectorCount > sector.wip_limit);
         return <article className={`sector ${displayMode === "compact" ? "compact-mode" : "detailed-mode"} ${overWip ? "over-wip" : ""}`} key={sector.id} data-sector-index={sectorIndex} data-sector-id={sector.id}>
           <div className="sector-head"><div><i>{String(sector.position).padStart(2, "0")}</i><h2>{sector.name}</h2></div><span title={sector.wip_limit ? `Limite recomendado: ${sector.wip_limit}` : "Sem limite configurado"}>{sectorCount}{sector.wip_limit ? `/${sector.wip_limit}` : ""}</span></div>
-          <div className="sector-body">{statusesForSector(sector.name).map((status) => {
+          <div className={`sector-body ${sector.uses_status === false ? "sector-without-status" : ""}`}>{(sector.uses_status === false ? ["Aguardando" as UiStatus] : statusesForSector(sector.name)).map((status) => {
             const laneOrders = groupedOrders.get(`${sector.id}:${status}`) || [];
-            return <div className={`lane ${dragOverLane === `${sector.id}:${status}` ? "drag-over" : ""}`} key={status} aria-label={`${sector.name} — ${status}`} onDragOver={(event) => { if (!canOperate) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; onDragOverLane(`${sector.id}:${status}`); }} onDrop={() => onDrop(sector.id, status)}>
-              <div className="lane-head"><b><i className={`dot ${statusDotClass(status)}`} />{status}</b><span>{laneOrders.length}</span></div>
+            const manualMoveAllowed = sector.allow_manual_move !== false;
+            return <div className={`lane ${sector.uses_status === false ? "lane-without-status" : ""} ${!manualMoveAllowed ? "manual-move-disabled" : ""} ${dragOverLane === `${sector.id}:${status}` ? "drag-over" : ""}`} key={status} aria-label={`${sector.name}${sector.uses_status === false ? "" : ` — ${status}`}`} onDragOver={(event) => { if (!canOperate || !manualMoveAllowed) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; onDragOverLane(`${sector.id}:${status}`); }} onDrop={() => { if (manualMoveAllowed) onDrop(sector.id, status); }}>
+              {sector.uses_status !== false && <div className="lane-head"><b><i className={`dot ${statusDotClass(status)}`} />{status}</b><span>{laneOrders.length}</span></div>}
+              {!manualMoveAllowed && <div className="lane-manual-move-note">Movimentação manual desativada</div>}
               {groupLaneOrdersAsStacks(`${sector.id}:${status}`, laneOrders).map((stack) => {
                 const sharedOrderCardProps: Omit<KanbanOrderCardProps, "order" | "commentCount" | "stackedChild"> = {
                   canOperate, canFinalize, isAdmin, busyOrderId, cardImageUrl, onDragStart, onDragEnd, onOpenOrder,
                   onDeleteOrder, onPreview, onThumbnailVisible, onMoveOrder, onChangeStatus, onFinishOrder,
+                  showStatusAction: sector.uses_status !== false,
                 };
                 if (stack.orders.length === 1) {
                   const order = stack.orders[0];

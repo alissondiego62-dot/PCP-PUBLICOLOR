@@ -280,6 +280,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   const [reopenError, setReopenError] = useState("");
   const [moveOrderTarget, setMoveOrderTarget] = useState<Order | null>(null);
   const [statusOrderTarget, setStatusOrderTarget] = useState<Order | null>(null);
+  const [installationScheduleTargets, setInstallationScheduleTargets] = useState<Order[]>([]);
   const [summaryClientId, setSummaryClientId] = useState("");
   const [productionFeedback, setProductionFeedback] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [usingOfflineSnapshot, setUsingOfflineSnapshot] = useState(false);
@@ -682,7 +683,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         : emptyResult;
 
       const [sectorResult, activeOrderResult, completedOrderResult, commentCountResult, profileResult, clientResult] = await Promise.all([
-        activeView === "users" ? emptyResult : supabase.from("sectors").select("id,name,position,active,wip_limit").order("position"),
+        activeView === "users" ? emptyResult : supabase.from("sectors").select("id,name,position,active,wip_limit,uses_status,requires_scheduling,show_in_agenda,allow_manual_move,special_type,color,icon").order("position"),
         activeOrdersQuery,
         completedOrdersQuery,
         needsCommentCounts ? fetchOrderCommentCounts() : Promise.resolve({ counts: {}, error: null }),
@@ -1130,11 +1131,13 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     onSectorChange: handleRealtimeSector,
   });
 
-  const installationSector = useMemo(() => activeSectors.find((sector) => sector.name === "INSTALAÇÃO") || null, [activeSectors]);
+  const installationSector = useMemo(() => activeSectors.find((sector) => sector.special_type === "installation") || activeSectors.find((sector) => sector.name === "INSTALAÇÃO") || null, [activeSectors]);
+  const productionCompletedSector = useMemo(() => activeSectors.find((sector) => sector.special_type === "production_completed") || activeSectors.find((sector) => sector.name === "PRODUÇÃO CONCLUÍDA") || null, [activeSectors]);
   const installationOrders = useMemo(() => activeOrders
     .filter((order) =>
-      Boolean(order.installation_scheduled_at) ||
       order.sector_id === installationSector?.id
+      && Boolean(order.installation_scheduled_at)
+      && order.installation_time_confirmed
     )
     .sort((a, b) => {
       if (a.installation_scheduled_at && b.installation_scheduled_at) {
@@ -1643,11 +1646,23 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   async function changeProductionField(order: Order, field: "sector_id" | "status", value: string) {
     if (!canMoveProduction || busyOrderId) return;
     const nextSectorId = field === "sector_id" ? value : order.sector_id;
-    const nextSectorName = activeSectors.find((sector) => sector.id === nextSectorId)?.name || "";
+    const nextSector = activeSectors.find((sector) => sector.id === nextSectorId);
+    const nextSectorName = nextSector?.name || "";
+    if (field === "sector_id" && nextSector?.allow_manual_move === false) {
+      setProductionFeedback("error");
+      setDetailError(`O setor ${nextSector.name} não permite movimentação manual.`);
+      window.setTimeout(() => setProductionFeedback("idle"), 2500);
+      return;
+    }
+    if (field === "sector_id" && installationSector && nextSectorId === installationSector.id) {
+      setInstallationScheduleTargets([order]);
+      return;
+    }
     let nextStatus = (field === "status" ? value : order.status) as DbStatus;
     const pcpSpecificStatus = nextStatus === "in_transport" || nextStatus === "waiting_client";
     if (!isPcpSectorName(nextSectorName) && pcpSpecificStatus) nextStatus = "waiting";
     if (isPcpSectorName(nextSectorName) && nextStatus === "in_progress") nextStatus = "waiting";
+    if (nextSector?.uses_status === false) nextStatus = "waiting";
     setProductionFeedback("saving");
     const ok = await updateOrder(order, { sector_id: nextSectorId, status: nextStatus }, field === "sector_id" ? "Setor atualizado automaticamente." : "Status atualizado automaticamente.");
     setProductionFeedback(ok ? "saved" : "error");
@@ -2159,18 +2174,38 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     if (!canMoveProduction || !dragged) return;
     const orderId = dragged;
     const previous = orders.find((order) => order.id === orderId);
+    const targetSector = activeSectors.find((sector) => sector.id === sectorId);
     setDragOverLane(null);
-    const nextStatus = statusToDb[status];
     setDragged(null);
-    if (!previous) return;
+    if (!previous || !targetSector) return;
+    if (targetSector.allow_manual_move === false) {
+      setError(`O setor ${targetSector.name} não permite movimentação manual.`);
+      return;
+    }
+    if (installationSector && sectorId === installationSector.id) {
+      setInstallationScheduleTargets([previous]);
+      return;
+    }
+    const nextStatus = targetSector.uses_status === false ? "waiting" : statusToDb[status];
     await updateOrder(previous, { sector_id: sectorId, status: nextStatus }, "Pedido movimentado e histórico atualizado.");
   }
 
   async function moveSelectedOrder(sectorId: string) {
     if (!moveOrderTarget || !canMoveProduction) return;
     const target = moveOrderTarget;
-    const sectorName = activeSectors.find((sector) => sector.id === sectorId)?.name || "";
-    let nextStatus = target.status;
+    const targetSector = activeSectors.find((sector) => sector.id === sectorId);
+    if (!targetSector) return;
+    if (targetSector.allow_manual_move === false) {
+      setError(`O setor ${targetSector.name} não permite movimentação manual.`);
+      return;
+    }
+    if (installationSector && sectorId === installationSector.id) {
+      setMoveOrderTarget(null);
+      setInstallationScheduleTargets([target]);
+      return;
+    }
+    const sectorName = targetSector.name;
+    let nextStatus = targetSector.uses_status === false ? "waiting" as DbStatus : target.status;
     if (!isPcpSectorName(sectorName) && (nextStatus === "in_transport" || nextStatus === "waiting_client")) nextStatus = "waiting";
     if (isPcpSectorName(sectorName) && nextStatus === "in_progress") nextStatus = "waiting";
     const moved = await updateOrder(target, { sector_id: sectorId, status: nextStatus }, "Pedido movimentado e histórico atualizado.");
@@ -2221,14 +2256,24 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
 
   async function moveStackOrders(targetOrders: Order[], sectorId: string) {
     if (!targetOrders.length || !canMoveProduction) return false;
-    const sectorName = activeSectors.find((sector) => sector.id === sectorId)?.name || "";
-    let nextStatus = targetOrders[0].status;
+    const targetSector = activeSectors.find((sector) => sector.id === sectorId);
+    if (!targetSector) return false;
+    if (targetSector.allow_manual_move === false) {
+      setError(`O setor ${targetSector.name} não permite movimentação manual.`);
+      return false;
+    }
+    if (installationSector && sectorId === installationSector.id) {
+      setInstallationScheduleTargets(targetOrders);
+      return true;
+    }
+    const sectorName = targetSector.name;
+    let nextStatus = targetSector.uses_status === false ? "waiting" as DbStatus : targetOrders[0].status;
     if (!isPcpSectorName(sectorName) && (nextStatus === "in_transport" || nextStatus === "waiting_client")) nextStatus = "waiting";
     if (isPcpSectorName(sectorName) && nextStatus === "in_progress") nextStatus = "waiting";
     return bulkUpdateKanbanOrders(
       targetOrders,
       { sector_id: sectorId, status: nextStatus },
-      `${targetOrders.length} pedido(s) movido(s) para ${sectorName || "o novo setor"}.`,
+      `${targetOrders.length} pedido(s) movido(s) para ${sectorName}.`,
       canMoveProduction,
     );
   }
@@ -2330,63 +2375,99 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     showNotice(`OP ${order.op_number} apagada com sucesso.`);
   }
 
-  async function scheduleInstallation(event: FormEvent<HTMLFormElement>, order: Order) {
+  async function scheduleOrdersForInstallation(event: FormEvent<HTMLFormElement>, targetOrders: Order[]) {
     event.preventDefault();
-    if (!canManageAgenda) return;
-    const value = String(new FormData(event.currentTarget).get("scheduled_at") || "");
-    if (!value) return;
+    if (!canManageAgenda || busyOrderId || !targetOrders.length) return false;
+    if (!installationSector) {
+      setError("O setor especial Instalação não está configurado ou está inativo.");
+      return false;
+    }
+    const form = new FormData(event.currentTarget);
+    const value = String(form.get("scheduled_at") || "").trim();
+    if (!value) {
+      setError("Defina a data e a hora da instalação.");
+      return false;
+    }
     const scheduledAt = installationLocalToIso(value);
-    const targetDate = value.slice(0, 10);
-    await updateOrder(order, {
+    const ids = targetOrders.map((order) => order.id);
+    setBusyOrderId(ids[0]);
+    setError("");
+    setDetailError("");
+    const { error: scheduleError } = await supabase.rpc("schedule_orders_for_installation", {
+      p_order_ids: ids,
+      p_scheduled_at: scheduledAt,
+      p_team: String(form.get("installation_team") || "").trim() || null,
+      p_vehicle: String(form.get("installation_vehicle") || "").trim() || null,
+      p_address: String(form.get("installation_address") || "").trim() || null,
+      p_notes: String(form.get("installation_notes") || "").trim() || null,
+    });
+    if (scheduleError) {
+      const migrationHint = ["42883", "PGRST202", "PGRST205"].includes(scheduleError.code || "") ? " Execute o SQL 3.5.0 revisado antes de usar este fluxo." : "";
+      const message = `${scheduleError.message || "Não foi possível criar o agendamento."}${migrationHint}`;
+      setError(`Não foi possível agendar a instalação: ${message}`);
+      setDetailError(message);
+      setBusyOrderId(null);
+      return false;
+    }
+    const patch: Partial<Order> = {
       installation_scheduled_at: scheduledAt,
-      delivery_date: previousBusinessDay(targetDate),
       installation_status: "scheduled",
       installation_time_confirmed: true,
-    }, order.installation_scheduled_at ? "Instalação ou entrega reagendada." : "Instalação ou entrega agendada.");
+      sector_id: installationSector.id,
+      status: "waiting",
+    };
+    setOrders((current) => current.map((order) => ids.includes(order.id) ? { ...order, ...patch } : order));
+    setModal((current) => current && current !== "new" && ids.includes(current.id) ? { ...current, ...patch } : current);
+    setInstallationScheduleTargets([]);
+    setBusyOrderId(null);
+    setReloadToken((current) => current + 1);
+    showNotice(`${ids.length} pedido${ids.length === 1 ? "" : "s"} agendado${ids.length === 1 ? "" : "s"} e movido${ids.length === 1 ? "" : "s"} para Instalação.`);
+    return true;
+  }
+
+  async function scheduleInstallation(event: FormEvent<HTMLFormElement>, order: Order) {
+    return scheduleOrdersForInstallation(event, [order]);
   }
 
   async function saveInstallationDetails(event: FormEvent<HTMLFormElement>, order: Order) {
     event.preventDefault();
     if (!canManageAgenda || busyOrderId === order.id) return;
 
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
+    const form = new FormData(event.currentTarget);
     const scheduledValue = String(form.get("scheduled_at") || "").trim();
-    const selectedStatus = String(
-      form.get("installation_status") || "pending",
-    ) as NonNullable<Order["installation_status"]>;
+    const selectedStatus = String(form.get("installation_status") || "pending") as NonNullable<Order["installation_status"]>;
 
-    const saved = await updateOrder(
-      order,
-      {
-        installation_scheduled_at: scheduledValue
-          ? installationLocalToIso(scheduledValue)
-          : order.installation_scheduled_at,
-        delivery_date: scheduledValue
-          ? previousBusinessDay(scheduledValue.slice(0, 10))
-          : order.delivery_date,
-        installation_address:
-          String(form.get("installation_address") || "").trim() || null,
-        installation_team:
-          String(form.get("installation_team") || "").trim() || null,
-        installation_vehicle:
-          String(form.get("installation_vehicle") || "").trim() || null,
-        installation_status: selectedStatus,
-        installation_time_confirmed: Boolean(scheduledValue),
-        installation_notes:
-          String(form.get("installation_notes") || "").trim() || null,
-        installation_completed_at:
-          selectedStatus === "completed"
-            ? order.installation_completed_at || new Date().toISOString()
-            : null,
-      },
-      "Dados da instalação atualizados.",
-    );
-
-    if (saved) {
-      await loadOrderDetails(order.id, true);
+    if (selectedStatus !== "cancelled" && order.sector_id === installationSector?.id && !scheduledValue) {
+      setDetailError("Pedidos em Instalação precisam manter data e hora definidas.");
+      return;
     }
+
+    if (selectedStatus !== "cancelled" && scheduledValue && order.sector_id === productionCompletedSector?.id) {
+      await scheduleOrdersForInstallation(event, [order]);
+      return;
+    }
+
+    const cancelling = selectedStatus === "cancelled";
+    if (cancelling && !productionCompletedSector) {
+      setDetailError("O setor especial Produção concluída não está ativo.");
+      return;
+    }
+    const patch: OrderPatch = {
+      installation_scheduled_at: cancelling ? null : scheduledValue ? installationLocalToIso(scheduledValue) : order.installation_scheduled_at,
+      installation_address: String(form.get("installation_address") || "").trim() || null,
+      installation_team: String(form.get("installation_team") || "").trim() || null,
+      installation_vehicle: String(form.get("installation_vehicle") || "").trim() || null,
+      installation_status: cancelling ? "pending" : selectedStatus,
+      installation_time_confirmed: cancelling ? false : Boolean(scheduledValue || order.installation_time_confirmed),
+      installation_notes: String(form.get("installation_notes") || "").trim() || null,
+      installation_completed_at: selectedStatus === "completed" ? order.installation_completed_at || new Date().toISOString() : null,
+      ...(cancelling && productionCompletedSector ? { sector_id: productionCompletedSector.id, status: "waiting" as DbStatus } : {}),
+    };
+
+    const saved = await updateOrder(order, patch, cancelling ? "Agendamento cancelado. Pedido devolvido para Produção concluída." : "Dados da instalação atualizados.");
+    if (saved) await loadOrderDetails(order.id, true);
   }
+
 
 
   async function bulkUpdateOrders(orderIds: string[], patch: { consultant_name?: string | null; priority?: Priority }) {
@@ -2918,6 +2999,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         activeOrders={activeOrders}
         completedOrders={completedOrders}
         installationOrders={installationOrders}
+        productionCompletedSectorId={productionCompletedSector?.id || null}
         sectorReport={sectorReport}
         largestSectorCount={largestSectorCount}
         currentUserId={user.id}
@@ -3024,6 +3106,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         orders={activeOrders}
         sectors={sectors}
         installationSector={installationSector}
+        productionCompletedSector={productionCompletedSector}
         canOperate={canManageAgenda}
         busyOrderId={busyOrderId}
         onOpenOrder={openOrder}
@@ -3077,7 +3160,28 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
       onClose={() => setMoveOrderTarget(null)}
       onMove={moveSelectedOrder}
     />}
-    {statusOrderTarget && <ChangeOrderStatusModal order={statusOrderTarget} sectorName={activeSectors.find((sector) => sector.id === statusOrderTarget.sector_id)?.name || ""} busy={busyOrderId === statusOrderTarget.id} onClose={() => setStatusOrderTarget(null)} onChange={changeSelectedOrderStatus} />}
+
+    {installationScheduleTargets.length > 0 && <div className="overlay quick-action-overlay" onMouseDown={() => { if (!busyOrderId) setInstallationScheduleTargets([]); }}>
+      <section className="modal quick-action-sheet installation-required-sheet" onMouseDown={(event) => event.stopPropagation()}>
+        <button type="button" className="close" aria-label="Fechar" disabled={Boolean(busyOrderId)} onClick={() => setInstallationScheduleTargets([])}>×</button>
+        <p className="eyebrow">AGENDAMENTO OBRIGATÓRIO</p>
+        <h2>{installationScheduleTargets.length === 1 ? `Mover OP ${installationScheduleTargets[0].op_number}` : `Mover ${installationScheduleTargets.length} pedidos`} para Instalação</h2>
+        <p>O pedido só entra em Instalação depois que a data e a hora forem confirmadas. Em uma pilha, o mesmo agendamento será aplicado aos itens selecionados.</p>
+        <form onSubmit={(event) => void scheduleOrdersForInstallation(event, installationScheduleTargets)}>
+          <label><span>Data e hora da instalação *</span><input type="datetime-local" name="scheduled_at" defaultValue={toInstallationInputValue(installationScheduleTargets[0].installation_scheduled_at) || ""} required /></label>
+          <div className="installation-required-grid">
+            <label><span>Equipe</span><input name="installation_team" defaultValue={installationScheduleTargets[0].installation_team || ""} placeholder="Equipe responsável" /></label>
+            <label><span>Veículo</span><input name="installation_vehicle" defaultValue={installationScheduleTargets[0].installation_vehicle || ""} placeholder="Veículo" /></label>
+          </div>
+          <label><span>Endereço</span><input name="installation_address" defaultValue={installationScheduleTargets[0].installation_address || ""} placeholder="Local da instalação" /></label>
+          <label><span>Observações</span><textarea name="installation_notes" defaultValue={installationScheduleTargets[0].installation_notes || ""} rows={3} /></label>
+          {!canManageAgenda && <div className="form-error">Seu usuário não possui permissão para gerenciar a Agenda.</div>}
+          <div className="actions"><button type="button" disabled={Boolean(busyOrderId)} onClick={() => setInstallationScheduleTargets([])}>Cancelar</button><button type="submit" className="primary" disabled={Boolean(busyOrderId) || !canManageAgenda}>{busyOrderId ? "Agendando…" : `Agendar e mover ${installationScheduleTargets.length > 1 ? `${installationScheduleTargets.length} pedidos` : "pedido"}`}</button></div>
+        </form>
+      </section>
+    </div>}
+
+        {statusOrderTarget && <ChangeOrderStatusModal order={statusOrderTarget} sectorName={activeSectors.find((sector) => sector.id === statusOrderTarget.sector_id)?.name || ""} busy={busyOrderId === statusOrderTarget.id} onClose={() => setStatusOrderTarget(null)} onChange={changeSelectedOrderStatus} />}
     {pdfImporterOpen && <div className="overlay pdf-import-overlay" onMouseDown={() => { if (!creatingOrder) setPdfImporterOpen(false); }}><div className="modal pdf-import-modal" role="dialog" aria-modal="true" aria-labelledby="pdf-import-title" onMouseDown={(event) => event.stopPropagation()}><button type="button" className="close" aria-label="Fechar importador de PDF" disabled={creatingOrder} onClick={() => setPdfImporterOpen(false)}>×</button>
       <p className="eyebrow">IMPORTAÇÃO DE ORDEM DE SERVIÇO</p><h2 id="pdf-import-title">Cadastrar pedidos a partir de PDF</h2><p>O sistema identifica os campos, cria um item para cada página e usa a própria página como miniatura da OS.</p>
       <PdfOrderImporter
@@ -3146,7 +3250,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         </form> : detailTab === "production" ? <section className="v3-production-panel editable-order-form production-autosave-panel">
           <div className="form-grid">
             <label>Setor atual<select value={modal.sector_id} disabled={!canMoveProduction || busyOrderId === modal.id} onChange={(event) => void changeProductionField(modal, "sector_id", event.target.value)}>{activeSectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}</select></label>
-            <label>Status<select value={modal.status} disabled={!canMoveProduction || busyOrderId === modal.id} onChange={(event) => void changeProductionField(modal, "status", event.target.value)}>{statusesForSector(activeSectors.find((sector) => sector.id === modal.sector_id)?.name).map((status) => <option key={status} value={statusToDb[status]}>{status}</option>)}<option value="paused">Pausado</option>{modal.status === "completed" && <option value="completed">Concluído</option>}</select></label>
+            {activeSectors.find((sector) => sector.id === modal.sector_id)?.uses_status !== false && <label>Status<select value={modal.status} disabled={!canMoveProduction || busyOrderId === modal.id} onChange={(event) => void changeProductionField(modal, "status", event.target.value)}>{statusesForSector(activeSectors.find((sector) => sector.id === modal.sector_id)?.name).map((status) => <option key={status} value={statusToDb[status]}>{status}</option>)}<option value="paused">Pausado</option>{modal.status === "completed" && <option value="completed">Concluído</option>}</select></label>}
           </div>
           <div className="v3-production-actions"><span className={`production-autosave-state ${productionFeedback}`}>{productionFeedback === "saving" ? "Salvando…" : productionFeedback === "saved" ? "✓ Atualizado" : productionFeedback === "error" ? "Falha ao salvar; valor anterior restaurado" : "Setor e status são salvos automaticamente"}</span>{canFinalizeOrders && modal.status !== "completed" && <button type="button" onClick={() => void finishOrder(modal)}>Finalizar ordem</button>}</div>
         </section> : detailTab === "materials" ? <div className="os-workspace-panel material-availability-panel">
@@ -3261,7 +3365,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
           {canEditOrders && <form className="checklist-add-form" onSubmit={addChecklistItem}><input name="label" placeholder="Novo item de conferência" required /><input name="category" placeholder="Categoria" defaultValue="Geral" /><button type="submit" className="primary" disabled={workspaceBusy}>Adicionar item</button></form>}
         </div> : detailTab === "installation" ? <form className="v3-installation-form" onSubmit={(event) => void saveInstallationDetails(event, modal)}>
           <div className="form-grid">
-            <label>Data e hora da instalação ou entrega<input type="datetime-local" name="scheduled_at" defaultValue={toInstallationInputValue(modal.installation_scheduled_at)} required /><small>O prazo de produção será ajustado automaticamente para 1 dia útil antes.</small></label>
+            <label>Data e hora da instalação ou entrega<input type="datetime-local" name="scheduled_at" defaultValue={toInstallationInputValue(modal.installation_scheduled_at)} /><small>Obrigatória para pedidos no setor Instalação. O prazo original da produção não será alterado.</small></label>
             <label>Status<select name="installation_status" defaultValue={modal.installation_status || "pending"}><option value="pending">Aguardando agendamento</option><option value="scheduled">Agendada</option><option value="in_progress">Equipe em campo</option><option value="completed">Concluída</option><option value="cancelled">Cancelada</option></select></label>
             <label className="wide">Endereço<input name="installation_address" defaultValue={modal.installation_address || ""} placeholder="Endereço completo da instalação" /></label>
             <label>Equipe<input name="installation_team" defaultValue={modal.installation_team || ""} placeholder="Ex.: Equipe 01" /></label>

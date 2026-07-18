@@ -1,6 +1,6 @@
 {
   "name": "controle-pedidos-kanban",
-  "version": "3.4.4",
+  "version": "3.5.0",
   "private": true,
   "engines": {
     "node": "24.x"
@@ -17,7 +17,7 @@
     "test:e2e": "python scripts/responsive_e2e.py",
     "test:e2e:install": "python -m playwright install chromium",
     "validate:environment": "node scripts/validate-environment.mjs",
-    "validate:release": "node scripts/validate-release-3.4.mjs"
+    "validate:release": "node scripts/validate-release-3.5.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2",

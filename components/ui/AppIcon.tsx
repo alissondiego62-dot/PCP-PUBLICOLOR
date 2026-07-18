@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 export type AppIconName =
   | "search" | "alert" | "close" | "menu" | "dashboard" | "kanban" | "orders"
   | "completed" | "calendar" | "tasks" | "clients" | "users" | "settings"
-  | "eye" | "edit" | "copy" | "trash" | "chevronDown" | "chevronRight"
+  | "eye" | "edit" | "copy" | "trash" | "chevronDown" | "chevronLeft" | "chevronRight"
   | "refresh" | "download" | "upload" | "filter" | "more" | "check" | "info"
   | "link" | "database" | "activity" | "shield" | "user" | "history" | "comments" | "move" | "status" | "pause" | "logout";
 
@@ -26,6 +26,7 @@ const paths: Record<AppIconName, ReactNode> = {
   copy: <><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></>,
   trash: <><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/><path d="M10 11v5M14 11v5"/></>,
   chevronDown: <path d="m6 9 6 6 6-6"/>,
+  chevronLeft: <path d="m15 6-6 6 6 6"/>,
   chevronRight: <path d="m9 6 6 6-6 6"/>,
   refresh: <><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></>,
   download: <><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/></>,

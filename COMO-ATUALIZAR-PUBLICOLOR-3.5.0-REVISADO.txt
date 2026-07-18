@@ -1,0 +1,56 @@
+PUBLICOLOR PCP 3.5.0 REVISADO — ATUALIZAÇÃO
+
+IMPORTANTE
+- Esta versão foi refeita a partir da base 3.4.6.
+- Faça backup do banco antes da atualização.
+- Aplique primeiro em homologação.
+- Não execute os SQLs antigos depois do SQL cumulativo desta versão.
+
+1. BANCO DE DADOS
+
+No SQL Editor do Supabase, execute integralmente:
+
+SQL-ATUALIZACAO-PUBLICOLOR-3.5.0-REVISADO.sql
+
+Depois execute:
+
+SQL-VALIDAR-PUBLICOLOR-3.5.0-REVISADO.sql
+
+As contagens de inconsistência precisam ser 0 e a configuração dos setores especiais deve retornar OK.
+
+A migração transfere todos os pedidos ativos atualmente em INSTALAÇÃO para PRODUÇÃO CONCLUÍDA. Datas antigas são preservadas como referência, mas precisam ser confirmadas novamente na Agenda.
+
+2. CÓDIGO
+
+Preserve no projeto:
+- .git
+- .env.local
+
+Substitua os demais arquivos pelo conteúdo do ZIP completo.
+
+3. VALIDAÇÃO LOCAL
+
+Use Node.js 24.x e pnpm 11.12.0:
+
+corepack enable
+pnpm install --frozen-lockfile
+pnpm validate
+
+4. PUBLICAÇÃO
+
+git add -A
+git commit -m "Publicolor 3.5.0 revisado: Kanban, agenda e instalação"
+git push
+
+5. TESTES OPERACIONAIS
+
+- Configurações > Kanban abre e lista todos os setores.
+- Criação, edição, ativação, inativação e reordenação funcionam.
+- Produção concluída aparece antes de Instalação.
+- Ambos aparecem sem faixas de status no Kanban.
+- Pedidos em Produção concluída aparecem em Pendentes de agendamento.
+- Arrastar para Instalação solicita data e hora.
+- Cancelar o modal mantém o pedido no setor anterior.
+- Agendar pela Agenda move o pedido para Instalação.
+- Cancelar o agendamento devolve o pedido para Produção concluída.
+- Ações coletivas de pilha respeitam o mesmo fluxo.

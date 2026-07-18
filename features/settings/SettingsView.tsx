@@ -13,11 +13,13 @@ import { SystemHealthPanel } from "@/components/SystemHealthPanel";
 import { ThumbnailOptimizationPanel } from "@/components/ThumbnailOptimizationPanel";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { PermissionsSettingsPanel } from "@/components/PermissionsSettingsPanel";
+import { KanbanSettingsPanel } from "@/components/KanbanSettingsPanel";
 
-type SettingsTab = "general" | "operation" | "integrations" | "data" | "diagnostics" | "permissions" | "infrastructure";
+type SettingsTab = "general" | "kanban" | "operation" | "integrations" | "data" | "diagnostics" | "permissions" | "infrastructure";
 const tabs: Array<{ key: SettingsTab; label: string; icon: "settings" | "kanban" | "link" | "database" | "activity" | "shield" | "users" }> = [
   { key: "general", label: "Geral", icon: "settings" },
-  { key: "operation", label: "Operação", icon: "kanban" },
+  { key: "kanban", label: "Kanban", icon: "kanban" },
+  { key: "operation", label: "Operação", icon: "activity" },
   { key: "integrations", label: "Integrações", icon: "link" },
   { key: "data", label: "Dados", icon: "database" },
   { key: "diagnostics", label: "Diagnóstico", icon: "activity" },
@@ -37,7 +39,7 @@ export function SettingsView({ userEmail, activeSectors, sectors, profiles, onli
   canPermissions: boolean;
   canInfrastructure: boolean;
 }) {
-  const availableTabs = tabs.filter((tab) => tab.key === "general" || (tab.key === "operation" && canOperation) || (["integrations","data","diagnostics"].includes(tab.key) && canIntegrations) || (tab.key === "permissions" && canPermissions) || (tab.key === "infrastructure" && canInfrastructure));
+  const availableTabs = tabs.filter((tab) => tab.key === "general" || (["kanban","operation"].includes(tab.key) && canOperation) || (["integrations","data","diagnostics"].includes(tab.key) && canIntegrations) || (tab.key === "permissions" && canPermissions) || (tab.key === "infrastructure" && canInfrastructure));
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [infraUnlocked, setInfraUnlocked] = useState(false);
   const [confirmation, setConfirmation] = useState("");
@@ -59,6 +61,7 @@ export function SettingsView({ userEmail, activeSectors, sectors, profiles, onli
       <article className="settings-card"><AppIcon name={online ? "check" : "alert"}/><div><small>STATUS DO SISTEMA</small><b>{online ? "Operacional" : "Offline · leitura local"}</b><p>{online ? "Interface e serviços disponíveis." : "Aguardando a conexão retornar."}</p></div></article>
     </div><SystemHealthPanel/><SystemVersionCard /></div>}
 
+    {activeTab === "kanban" && <div className="settings-tab-content">{online ? <KanbanSettingsPanel sectors={sectors} onChanged={onImportComplete}/> : <OfflineMessage/>}</div>}
     {activeTab === "operation" && <div className="settings-tab-content">{online ? <OperationalSettingsPanel sectors={sectors} profiles={profiles}/> : <OfflineMessage/>}</div>}
     {activeTab === "integrations" && <div className="settings-tab-content">{online ? <><GoogleDriveSettings/><ThumbnailOptimizationPanel/></> : <OfflineMessage/>}</div>}
     {activeTab === "data" && <div className="settings-tab-content">{online ? <DataImportExportSettings sectors={sectors} onImportComplete={onImportComplete}/> : <OfflineMessage/>}</div>}

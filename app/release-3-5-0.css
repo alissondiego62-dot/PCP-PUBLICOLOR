@@ -1,0 +1,477 @@
+/* Publicolor PCP 3.5.0 · configuração de setores e fluxo de instalação */
+
+.kanban-settings-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:18px;
+}
+
+.kanban-settings-header h2,
+.kanban-sector-editor-title h3{
+  margin:3px 0 5px;
+}
+
+.kanban-settings-header p{
+  max-width:760px;
+  margin:0;
+  color:#746a78;
+}
+
+.kanban-settings-flow-note{
+  display:flex;
+  align-items:flex-start;
+  gap:11px;
+  margin-top:16px;
+  padding:12px 14px;
+  border:1px solid #d9c7df;
+  border-radius:14px;
+  background:#faf6fb;
+  color:#54355f;
+}
+
+.kanban-settings-flow-note>.app-icon{
+  flex:0 0 auto;
+  margin-top:2px;
+  color:#6b2b7d;
+}
+
+.kanban-settings-flow-note p{
+  margin:3px 0 0;
+  color:#75677a;
+}
+
+.kanban-sector-settings-list{
+  display:grid;
+  gap:8px;
+  margin-top:16px;
+}
+
+.kanban-sector-settings-list article{
+  display:grid;
+  grid-template-columns:42px minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:12px;
+  padding:11px 12px;
+  border:1px solid #e3d8e6;
+  border-radius:14px;
+  background:#fff;
+}
+
+.kanban-sector-settings-list article.inactive{
+  background:#f7f5f7;
+  opacity:.68;
+}
+
+.kanban-sector-settings-list article>i{
+  display:grid;
+  place-items:center;
+  width:38px;
+  height:38px;
+  border-radius:11px;
+  color:#fff;
+  font-style:normal;
+  font-size:12px;
+  font-weight:900;
+}
+
+.kanban-sector-description{
+  display:grid;
+  gap:3px;
+  min-width:0;
+}
+
+.kanban-sector-description b,
+.kanban-sector-description small{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.kanban-sector-description small{
+  color:#7a707e;
+}
+
+.kanban-sector-settings-list article>span{
+  padding:4px 8px;
+  border-radius:999px;
+  font-size:10px;
+  font-weight:800;
+}
+
+.kanban-sector-settings-list article>span.active{
+  background:#e6f5eb;
+  color:#257044;
+}
+
+.kanban-sector-settings-list article>span.inactive{
+  background:#eee9ef;
+  color:#746b77;
+}
+
+.kanban-sector-row-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:5px;
+}
+
+.kanban-sector-row-actions button{
+  min-width:34px;
+  height:34px;
+  padding:0 9px;
+  border:1px solid #ddd0e1;
+  border-radius:9px;
+  background:#fff;
+}
+
+.kanban-sector-row-actions button>.app-icon{
+  width:15px;
+  height:15px;
+}
+
+.kanban-sector-editor{
+  margin-top:16px;
+  padding:15px;
+  border:1px solid #d9c8df;
+  border-radius:16px;
+  background:#faf7fb;
+}
+
+.kanban-sector-editor-title{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+}
+
+.kanban-sector-editor-title>button{
+  width:34px;
+  height:34px;
+  border:1px solid #ded2e2;
+  border-radius:10px;
+  background:#fff;
+  font-size:20px;
+}
+
+.kanban-sector-editor-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin-top:12px;
+}
+
+.kanban-sector-editor-grid label{
+  display:grid;
+  gap:6px;
+  min-width:0;
+}
+
+.kanban-sector-editor-grid label.check{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-height:40px;
+  padding:8px 10px;
+  border:1px solid #e3d8e6;
+  border-radius:11px;
+  background:#fff;
+}
+
+.kanban-sector-editor-grid input,
+.kanban-sector-editor-grid select{
+  min-width:0;
+}
+
+.kanban-special-warning{
+  margin:12px 0 0;
+  padding:9px 11px;
+  border-left:3px solid #6b2b7d;
+  border-radius:8px;
+  background:#f2e9f5;
+  color:#654a6d;
+}
+
+.kanban-sector-editor .actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  margin-top:14px;
+}
+
+.sector-without-status{
+  padding-top:8px;
+}
+
+.lane-without-status{
+  min-height:100%;
+}
+
+.lane-without-status>.empty-lane{
+  min-height:90px;
+}
+
+.lane-manual-move-note{
+  margin:0 0 8px;
+  padding:7px 9px;
+  border-radius:9px;
+  background:#f1eef2;
+  color:#776f79;
+  font-size:10px;
+  text-align:center;
+}
+
+.installation-required-sheet{
+  width:min(620px,calc(100vw - 24px));
+}
+
+.installation-required-sheet form{
+  display:grid;
+  gap:13px;
+}
+
+.installation-required-sheet form label{
+  display:grid;
+  gap:6px;
+}
+
+.installation-required-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+}
+
+.installation-required-sheet textarea{
+  min-height:82px;
+  resize:vertical;
+}
+
+.agenda-summary-five{
+  grid-template-columns:repeat(5,minmax(0,1fr));
+}
+
+.agenda-summary-five article.attention{
+  border-color:#e3b8a3;
+  background:#fff7f1;
+}
+
+.agenda-pending-scheduling{
+  margin:0 0 18px;
+  padding:16px;
+  border:1px solid #ddcce3;
+  border-radius:18px;
+  background:#faf6fb;
+}
+
+.agenda-pending-scheduling>header{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:14px;
+}
+
+.agenda-pending-scheduling>header h2{
+  margin:3px 0;
+}
+
+.agenda-pending-scheduling>header p{
+  margin:0;
+  color:#736879;
+}
+
+.agenda-pending-scheduling>header>span{
+  display:grid;
+  place-items:center;
+  min-width:40px;
+  height:40px;
+  border-radius:12px;
+  background:#67237d;
+  color:#fff;
+  font-weight:900;
+}
+
+.agenda-pending-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+  gap:10px;
+  margin-top:14px;
+}
+
+.agenda-pending-grid article{
+  display:grid;
+  gap:11px;
+  padding:12px;
+  border:1px solid #e4d8e7;
+  border-radius:14px;
+  background:#fff;
+}
+
+.agenda-pending-grid article.late{
+  border-color:#e7b9b3;
+  box-shadow:inset 3px 0 #c44d41;
+}
+
+.agenda-pending-order-info{
+  display:grid;
+  gap:4px;
+}
+
+.agenda-pending-order-title{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+
+.agenda-pending-order-title>span{
+  padding:3px 7px;
+  border-radius:999px;
+  background:#f1e8f4;
+  color:#642778;
+  font-size:9px;
+  font-weight:800;
+  text-transform:uppercase;
+}
+
+.agenda-pending-grid article h3{
+  margin:0;
+}
+
+.agenda-pending-grid article p{
+  margin:0;
+  color:#6f6574;
+}
+
+.agenda-pending-grid article small{
+  color:#786c7b;
+}
+
+.agenda-pending-grid article em{
+  color:#896a3f;
+  font-size:10px;
+  font-style:normal;
+}
+
+.agenda-pending-grid article form{
+  display:grid;
+  gap:8px;
+}
+
+.agenda-pending-grid article form label{
+  display:grid;
+  gap:5px;
+}
+
+.agenda-pending-grid article form>div{
+  display:flex;
+  justify-content:flex-end;
+  gap:7px;
+}
+
+.agenda-pending-grid article form button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+}
+
+.agenda-pending-empty{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  margin-top:14px;
+  padding:14px;
+  border:1px dashed #d9cbdc;
+  border-radius:14px;
+  background:#fff;
+  color:#58705f;
+}
+
+.agenda-pending-empty>.app-icon{
+  color:#2d7a46;
+}
+
+.agenda-pending-empty p{
+  margin:3px 0 0;
+  color:#7a707d;
+}
+
+@media(max-width:1100px){
+  .agenda-summary-five{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+}
+
+@media(max-width:760px){
+  .kanban-settings-header{
+    display:grid;
+  }
+
+  .kanban-settings-header>button{
+    width:100%;
+  }
+
+  .kanban-sector-settings-list article{
+    grid-template-columns:38px minmax(0,1fr) auto;
+  }
+
+  .kanban-sector-row-actions{
+    grid-column:1/-1;
+  }
+
+  .kanban-sector-editor-grid,
+  .installation-required-grid{
+    grid-template-columns:1fr;
+  }
+
+  .agenda-summary-five{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+
+  .agenda-pending-grid{
+    grid-template-columns:1fr;
+  }
+
+  .agenda-pending-grid article form>div{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+  }
+}
+
+@media(max-width:480px){
+  .kanban-sector-settings-list article{
+    grid-template-columns:34px minmax(0,1fr);
+  }
+
+  .kanban-sector-settings-list article>span{
+    grid-column:2;
+    justify-self:start;
+  }
+
+  .kanban-sector-row-actions{
+    grid-column:1/-1;
+    display:grid;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    width:100%;
+  }
+
+  .kanban-sector-row-actions button{
+    min-width:0;
+    padding:0 5px;
+  }
+
+  .agenda-summary-five{
+    grid-template-columns:1fr 1fr;
+  }
+
+  .agenda-pending-scheduling{
+    padding:13px;
+  }
+
+  .agenda-pending-scheduling>header h2{
+    font-size:18px;
+  }
+
+  .agenda-pending-grid article form>div{
+    grid-template-columns:1fr;
+  }
+}
