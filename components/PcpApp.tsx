@@ -2832,7 +2832,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
       return false;
     }
 
-    if (resolvedItems.some((item) => item.imageSource === "pdf_page")) {
+    if (resolvedItems.some((item) => item.imageSource === "pdf_page" || Boolean(item.additionalDocuments?.length))) {
       try {
         const driveStatus = await driveAuthenticatedJson<DriveConnectionStatus>("/api/google-drive/status");
         if (!driveStatus.enabled || !driveStatus.connected) {
@@ -2894,36 +2894,54 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     // requisições simultâneas tentem criar a mesma pasta de cliente/OP antes
     // de o Google Drive concluir a indexação da primeira criação.
     for (const item of resolvedItems) {
-      if (!item.image) continue;
+      const additionalDocuments = item.additionalDocuments || [];
+      const additionalDocumentNotes = item.additionalDocumentNotes || [];
+      if (!item.image && !additionalDocuments.length) continue;
       const orderId = createdByOp.get(item.opNumber);
       if (!orderId) {
-        imageWarnings.push(`OP ${item.opNumber}: registro criado, mas não foi possível localizar a miniatura.`);
+        imageWarnings.push(`OP ${item.opNumber}: registro criado, mas não foi possível localizar os documentos importados.`);
         continue;
       }
 
-      if (item.imageSource === "pdf_page") {
-        try {
-          const driveRecord = await uploadFileToOrderDrive({
-            orderId,
-            file: item.image,
-            category: "document",
-            notes: `Página da ordem de serviço importada em PDF e usada como miniatura da OP ${item.opNumber}.`,
-          });
-          const driveFileId = driveRecord.drive_file_id?.trim();
-          if (!driveFileId) throw new Error("O Google Drive não retornou o ID do arquivo.");
+      if (item.imageSource === "pdf_page" || additionalDocuments.length) {
+        if (item.image) {
+          try {
+            const driveRecord = await uploadFileToOrderDrive({
+              orderId,
+              file: item.image as File,
+              category: "document",
+              notes: `Página principal da ordem de serviço importada em PDF e usada como miniatura da OP ${item.opNumber}.`,
+            });
+            const driveFileId = driveRecord.drive_file_id?.trim();
+            if (!driveFileId) throw new Error("O Google Drive não retornou o ID do arquivo.");
 
-          const thumbnailPath = buildDriveThumbnailPath(driveFileId);
-          const { error: imageUpdateError } = await supabase
-            .from("orders")
-            .update({ main_image_path: thumbnailPath })
-            .eq("id", orderId);
-          if (imageUpdateError) throw imageUpdateError;
-        } catch (driveError) {
-          imageWarnings.push(`OP ${item.opNumber}: ${driveError instanceof Error ? driveError.message : "não foi possível salvar a página no Google Drive"}`);
+            const thumbnailPath = buildDriveThumbnailPath(driveFileId);
+            const { error: imageUpdateError } = await supabase
+              .from("orders")
+              .update({ main_image_path: thumbnailPath })
+              .eq("id", orderId);
+            if (imageUpdateError) throw imageUpdateError;
+          } catch (driveError) {
+            imageWarnings.push(`OP ${item.opNumber}: ${driveError instanceof Error ? driveError.message : "não foi possível salvar a página principal no Google Drive"}`);
+          }
+        }
+
+        for (const [index, document] of additionalDocuments.entries()) {
+          try {
+            await uploadFileToOrderDrive({
+              orderId,
+              file: document as File,
+              category: "document",
+              notes: additionalDocumentNotes[index] || `Página complementar ${index + 1} importada do PDF para a OP ${item.opNumber}.`,
+            });
+          } catch (driveError) {
+            imageWarnings.push(`OP ${item.opNumber}, complemento ${index + 1}: ${driveError instanceof Error ? driveError.message : "não foi possível salvar o documento complementar no Google Drive"}`);
+          }
         }
         continue;
       }
 
+      if (!item.image) continue;
       const imagePath = `orders/${orderId}/manual/${crypto.randomUUID()}.png`;
       const { error: uploadError } = await supabase.storage.from("order-thumbnails").upload(imagePath, item.image, {
         contentType: "image/png",
@@ -2944,8 +2962,11 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     setNewOrderInitialClientId("");
     setModal(null);
     setCreatingOrder(false);
-    if (imageWarnings.length) setError(`Pedidos cadastrados. Falhas nas miniaturas: ${imageWarnings.join(" | ")}`);
-    showNotice(submission.mode === "batch" ? `${resolvedItems.length} subpedidos cadastrados na OP ${resolvedBaseOp}.` : `Pedido ${resolvedBaseOp} cadastrado com sucesso.`);
+    if (imageWarnings.length) setError(`Pedidos cadastrados. Falhas nos documentos importados: ${imageWarnings.join(" | ")}`);
+    const importedComplements = resolvedItems.reduce((total, item) => total + (item.additionalDocuments?.length || 0), 0);
+    showNotice(submission.mode === "batch"
+      ? `${resolvedItems.length} subpedidos cadastrados na OP ${resolvedBaseOp}${importedComplements ? ` com ${importedComplements} página(s) complementar(es)` : ""}.`
+      : `Pedido ${resolvedBaseOp} cadastrado${importedComplements ? ` com ${importedComplements} página(s) complementar(es)` : ""} com sucesso.`);
     return true;
   }
 

@@ -1,0 +1,16 @@
+PUBLICOLOR PCP 3.5.2 - ATUALIZAÇÃO
+
+1. Preserve as pastas/arquivos locais:
+   .git
+   .env.local
+
+2. Substitua os demais arquivos pelo conteúdo do ZIP 3.5.2.
+
+3. Não execute novo SQL. O banco continua usando a atualização 3.5.0 Revisado.
+
+4. No terminal com Node.js 24.x:
+   corepack enable
+   pnpm install --frozen-lockfile
+   pnpm validate
+
+5. Publique no Git/Vercel.

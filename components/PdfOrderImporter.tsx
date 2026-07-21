@@ -18,9 +18,13 @@ const MAX_PDF_SIZE = 50 * 1024 * 1024;
 const MAX_PAGES = 80;
 const MAX_THUMBNAIL_SIZE = 4.8 * 1024 * 1024;
 
+type PdfPageImportMode = "new_order" | "complement";
+
 type ImportedPage = ParsedPdfOrderPage & {
   key: string;
   enabled: boolean;
+  importMode: PdfPageImportMode;
+  complementTargetKey: string;
   suffix: string;
   clientId: string;
   job: string;
@@ -146,6 +150,8 @@ export function PdfOrderImporter({
 
   const activeClients = useMemo(() => clients.filter((client) => client.active), [clients]);
   const enabledPages = useMemo(() => pages.filter((page) => page.enabled), [pages]);
+  const orderPages = useMemo(() => enabledPages.filter((page) => page.importMode === "new_order"), [enabledPages]);
+  const complementPages = useMemo(() => enabledPages.filter((page) => page.importMode === "complement"), [enabledPages]);
   const sharedClient = clients.find((client) => client.id === sharedClientId);
 
   useEffect(() => () => {
@@ -159,6 +165,40 @@ export function PdfOrderImporter({
 
   function updatePage<K extends keyof ImportedPage>(key: string, field: K, value: ImportedPage[K]) {
     setPages((current) => current.map((page) => page.key === key ? { ...page, [field]: value } : page));
+  }
+
+  function setPageEnabled(key: string, enabled: boolean) {
+    setPages((current) => {
+      const remainingTargets = current.filter((page) => page.key !== key && page.enabled && page.importMode === "new_order");
+      const fallbackTarget = remainingTargets[0]?.key || "";
+      return current.map((page) => {
+        if (page.key === key) return { ...page, enabled };
+        if (!enabled && page.importMode === "complement" && page.complementTargetKey === key) {
+          return { ...page, complementTargetKey: fallbackTarget };
+        }
+        return page;
+      });
+    });
+  }
+
+  function setPageImportMode(key: string, importMode: PdfPageImportMode) {
+    setPages((current) => {
+      const pageIndex = current.findIndex((page) => page.key === key);
+      if (pageIndex < 0) return current;
+      const previousTarget = [...current.slice(0, pageIndex)].reverse().find((page) => page.enabled && page.importMode === "new_order" && page.key !== key);
+      const anyTarget = current.find((page) => page.enabled && page.importMode === "new_order" && page.key !== key);
+      const fallbackTargetKey = previousTarget?.key || anyTarget?.key || "";
+      const next = current.map((page) => page.key === key
+        ? { ...page, importMode, complementTargetKey: importMode === "complement" ? (page.complementTargetKey || fallbackTargetKey) : "" }
+        : page);
+      if (importMode === "complement") {
+        const remainingOrderTarget = next.find((page) => page.enabled && page.importMode === "new_order" && page.key !== key)?.key || "";
+        return next.map((page) => page.importMode === "complement" && page.complementTargetKey === key
+          ? { ...page, complementTargetKey: remainingOrderTarget }
+          : page);
+      }
+      return next;
+    });
   }
 
   function applySharedClient(clientId: string, providedClient?: Client) {
@@ -240,6 +280,8 @@ export function PdfOrderImporter({
         ...parsed,
         key: crypto.randomUUID(),
         enabled: true,
+        importMode: "new_order",
+        complementTargetKey: "",
         suffix: String(parsed.pageNumber).padStart(parsed.totalPages >= 10 ? 2 : 1, "0"),
         clientId: detectedClientId,
         job: parsed.serviceTitle,
@@ -267,23 +309,42 @@ export function PdfOrderImporter({
     }
   }
 
+  function orderNumberLabel(page: ImportedPage) {
+    const batch = orderPages.length > 1;
+    if (requiresAutomaticOrderNumber(baseOp)) return batch ? `Número automático · item ${page.suffix}` : "Número automático";
+    if (!baseOp.trim()) return batch ? `OP não informada · item ${page.suffix}` : "OP não informada";
+    return batch ? `${baseOp.trim()}-${page.suffix}` : baseOp.trim();
+  }
+
   async function submitImport() {
     setError("");
     if (!sourceFile || !enabledPages.length) {
       setError("Selecione pelo menos uma página para importar.");
       return;
     }
-    const suffixes = enabledPages.map((page) => page.suffix.trim());
-    if (enabledPages.length > 1 && suffixes.some((suffix) => !/^\d+$/.test(suffix))) {
-      setError("Todas as páginas precisam de um número de subpedido válido.");
-      return;
-    }
-    if (new Set(suffixes).size !== suffixes.length) {
-      setError("Existem páginas com o mesmo número de subpedido.");
+    if (!orderPages.length) {
+      setError("Defina pelo menos uma página como novo pedido.");
       return;
     }
 
-    let resolvedPages = enabledPages.map((page) => ({ ...page }));
+    const selectedOrderKeys = new Set(orderPages.map((page) => page.key));
+    const invalidComplement = complementPages.find((page) => !page.complementTargetKey || !selectedOrderKeys.has(page.complementTargetKey));
+    if (invalidComplement) {
+      setError(`Página ${invalidComplement.pageNumber}: selecione o pedido que receberá esta página complementar.`);
+      return;
+    }
+
+    const suffixes = orderPages.map((page) => page.suffix.trim());
+    if (orderPages.length > 1 && suffixes.some((suffix) => !/^\d+$/.test(suffix))) {
+      setError("Todos os novos pedidos precisam de um número de subpedido válido.");
+      return;
+    }
+    if (new Set(suffixes).size !== suffixes.length) {
+      setError("Existem novos pedidos com o mesmo número de subpedido.");
+      return;
+    }
+
+    let resolvedPages = orderPages.map((page) => ({ ...page }));
     const ensuredClients = new Map<string, Client>();
 
     try {
@@ -335,27 +396,44 @@ export function PdfOrderImporter({
       }
     }
 
+    const complementsByTarget = new Map<string, ImportedPage[]>();
+    for (const complement of complementPages) {
+      const list = complementsByTarget.get(complement.complementTargetKey) || [];
+      list.push(complement);
+      complementsByTarget.set(complement.complementTargetKey, list);
+    }
+
     const isBatch = resolvedPages.length > 1;
     const success = await onSubmit({
       mode: isBatch ? "batch" : "single",
       baseOp: baseOp.trim(),
-      items: resolvedPages.map((page) => ({
-        opNumber: isBatch
-          ? `${requiresAutomaticOrderNumber(baseOp) ? "0000" : baseOp.trim()}-${page.suffix.trim()}`
-          : baseOp.trim(),
-        suffix: page.suffix.trim(),
-        clientId: page.clientId,
-        job: page.job.trim(),
-        targetDate: page.target,
-        priority: page.priority,
-        consultantName: page.consultant.trim(),
-        sectorId: page.sectorId,
-        installationAddress: page.installationAddress.trim(),
-        materials: page.materials.trim(),
-        notes: page.orderNotes.trim(),
-        image: page.image,
-        imageSource: "pdf_page",
-      })),
+      items: resolvedPages.map((page) => {
+        const complements = complementsByTarget.get(page.key) || [];
+        const complementNoteLines = complements.map((item) => `Página complementar ${item.pageNumber}/${item.totalPages}: ${item.job.trim() || "documento complementar"}.`);
+        return {
+          opNumber: isBatch
+            ? `${requiresAutomaticOrderNumber(baseOp) ? "0000" : baseOp.trim()}-${page.suffix.trim()}`
+            : baseOp.trim(),
+          suffix: page.suffix.trim(),
+          clientId: page.clientId,
+          job: page.job.trim(),
+          targetDate: page.target,
+          priority: page.priority,
+          consultantName: page.consultant.trim(),
+          sectorId: page.sectorId,
+          installationAddress: page.installationAddress.trim(),
+          materials: page.materials.trim(),
+          notes: [page.orderNotes.trim(), ...complementNoteLines].filter(Boolean).join("\n"),
+          image: page.image,
+          imageSource: "pdf_page" as const,
+          additionalDocuments: complements.map((item) => item.image),
+          additionalDocumentNotes: complements.map((item) => [
+            `Página ${item.pageNumber}/${item.totalPages} adicionada como complemento da página ${page.pageNumber}.`,
+            item.job.trim() ? `Descrição: ${item.job.trim()}` : "",
+            item.orderNotes.trim(),
+          ].filter(Boolean).join("\n")),
+        };
+      }),
     });
     if (success) onCancel();
   }
@@ -365,7 +443,7 @@ export function PdfOrderImporter({
       <div>
         <small>IMPORTAÇÃO INTELIGENTE</small>
         <h3>Selecione a ordem de serviço em PDF</h3>
-        <p>Cada página será transformada em um pedido ou subpedido, enviada ao Google Drive em Documentos e usada como miniatura.</p>{sourceFile && <span className="pdf-source-file">{sourceFile.name} · {(sourceFile.size / 1024 / 1024).toFixed(2)} MB</span>}
+        <p>Cada página pode criar um novo pedido ou ser anexada como complemento de outro pedido do mesmo PDF.</p>{sourceFile && <span className="pdf-source-file">{sourceFile.name} · {(sourceFile.size / 1024 / 1024).toFixed(2)} MB</span>}
       </div>
       <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -383,7 +461,7 @@ export function PdfOrderImporter({
 
     {!!pages.length && <>
       <section className="pdf-import-shared">
-        <header><div><small>DADOS IDENTIFICADOS</small><h3>Informações gerais da OP</h3></div><span>{pages.length} página(s) lida(s) · {enabledPages.length} selecionada(s)</span></header>
+        <header><div><small>DADOS IDENTIFICADOS</small><h3>Informações gerais da OP</h3></div><span>{pages.length} página(s) lida(s) · {orderPages.length} pedido(s) · {complementPages.length} complemento(s)</span></header>
         <div className="form-grid pdf-import-shared-grid">
           <label>Número da OP<input value={baseOp} onChange={(event: ChangeEvent<HTMLInputElement>) => setBaseOp(event.target.value)} placeholder="Ex.: 959 ou 0000" /><small>{automaticOrderNumberHint()}</small></label>
           <label className="wide">Cliente
@@ -404,23 +482,49 @@ export function PdfOrderImporter({
       </section>
 
       <section className="pdf-import-pages">
-        <header><div><small>REVISÃO POR PÁGINA</small><h3>Subpedidos que serão cadastrados</h3></div><p>Revise os campos antes de confirmar. Você pode desmarcar uma página.</p></header>
+        <header><div><small>REVISÃO POR PÁGINA</small><h3>Pedidos e páginas complementares</h3></div><p>Em cada página, escolha se será um novo pedido ou um complemento de outro pedido.</p></header>
         <div className="pdf-page-list">
           {pages.map((page) => {
             const client = clients.find((item) => item.id === page.clientId);
-            return <article className={`pdf-page-card ${page.enabled ? "" : "disabled"}`} key={page.key}>
+            const targetCandidates = pages.filter((item) => item.key !== page.key && item.enabled && item.importMode === "new_order");
+            const targetPage = pages.find((item) => item.key === page.complementTargetKey);
+            const targetLabel = targetPage
+              ? `Página ${targetPage.pageNumber} · ${orderNumberLabel(targetPage)}`
+              : "Selecione o pedido";
+            return <article className={`pdf-page-card ${page.enabled ? "" : "disabled"} ${page.importMode === "complement" ? "complement-page" : "new-order-page"}`} key={page.key}>
               <div className="pdf-page-preview">
                 <img src={page.previewUrl} alt={`Página ${page.pageNumber} do PDF`} />
                 <span>Página {page.pageNumber}/{page.totalPages}</span>
               </div>
               <div className="pdf-page-editor">
                 <header>
-                  <label className="pdf-page-toggle"><input type="checkbox" checked={page.enabled} onChange={(event: ChangeEvent<HTMLInputElement>) => updatePage(page.key, "enabled", event.target.checked)} /><span>Importar esta página</span></label>
-                  <b>{requiresAutomaticOrderNumber(baseOp) ? `Número automático · item ${page.suffix}` : `${baseOp}-${page.suffix}`}</b>
+                  <div className="pdf-page-header-controls">
+                    <label className="pdf-page-toggle"><input type="checkbox" checked={page.enabled} onChange={(event: ChangeEvent<HTMLInputElement>) => setPageEnabled(page.key, event.target.checked)} /><span>Importar esta página</span></label>
+                    <label className="pdf-page-mode-label">Como importar
+                      <select value={page.importMode} disabled={!page.enabled} onChange={(event: ChangeEvent<HTMLSelectElement>) => setPageImportMode(page.key, event.target.value as PdfPageImportMode)}>
+                        <option value="new_order">Novo pedido</option>
+                        <option value="complement" disabled={!targetCandidates.length}>Complemento de outro pedido</option>
+                      </select>
+                    </label>
+                  </div>
+                  <b>{page.importMode === "complement"
+                    ? `Complemento · ${targetLabel}`
+                    : orderNumberLabel(page)}</b>
                 </header>
-                <div className="form-grid pdf-page-fields">
-                  {pages.length > 1 && <label>Número do subpedido<input inputMode="numeric" value={page.suffix} onChange={(event: ChangeEvent<HTMLInputElement>) => updatePage(page.key, "suffix", event.target.value.replace(/\D/g, ""))} disabled={!page.enabled} /></label>}
-                  <label className={pages.length > 1 ? "wide" : ""}>Serviço<textarea value={page.job} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => updatePage(page.key, "job", event.target.value)} disabled={!page.enabled} /></label>
+
+                {page.importMode === "complement" ? <div className="pdf-page-complement-editor">
+                  <div className="pdf-complement-callout"><b>Esta página não criará um novo pedido.</b><span>Ela será salva na pasta Documentos e vinculada ao pedido escolhido abaixo.</span></div>
+                  <label>Adicionar como complemento de
+                    <select value={page.complementTargetKey} disabled={!page.enabled} onChange={(event: ChangeEvent<HTMLSelectElement>) => updatePage(page.key, "complementTargetKey", event.target.value)}>
+                      <option value="">Selecione o pedido</option>
+                      {targetCandidates.map((item) => <option key={item.key} value={item.key}>{`Página ${item.pageNumber} · ${orderNumberLabel(item)}`}</option>)}
+                    </select>
+                  </label>
+                  <label>Descrição do complemento<textarea value={page.job} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => updatePage(page.key, "job", event.target.value)} disabled={!page.enabled} placeholder="Ex.: detalhe técnico, vista lateral ou continuação do projeto" /></label>
+                  <label>Observações da página<textarea value={page.orderNotes} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => updatePage(page.key, "orderNotes", event.target.value)} disabled={!page.enabled} /></label>
+                </div> : <div className="form-grid pdf-page-fields">
+                  {orderPages.length > 1 && <label>Número do subpedido<input inputMode="numeric" value={page.suffix} onChange={(event: ChangeEvent<HTMLInputElement>) => updatePage(page.key, "suffix", event.target.value.replace(/\D/g, ""))} disabled={!page.enabled} /></label>}
+                  <label className={orderPages.length > 1 ? "wide" : ""}>Serviço<textarea value={page.job} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => updatePage(page.key, "job", event.target.value)} disabled={!page.enabled} /></label>
                   <label>Cliente<select value={page.clientId} onChange={(event: ChangeEvent<HTMLSelectElement>) => updatePage(page.key, "clientId", event.target.value)} disabled={!page.enabled}><option value="">Selecione</option>{activeClients.map((item) => <option key={item.id} value={item.id}>{activeClientName(item)}</option>)}</select></label>
                   <label>Setor inicial<select value={page.sectorId} onChange={(event: ChangeEvent<HTMLSelectElement>) => updatePage(page.key, "sectorId", event.target.value)} disabled={!page.enabled}><option value="">Selecione</option>{sectors.map((sector) => <option key={sector.id} value={sector.id}>{sector.name}</option>)}</select></label>
                   <label>Data da instalação/entrega<input type="date" value={page.target} onChange={(event: ChangeEvent<HTMLInputElement>) => updatePage(page.key, "target", event.target.value)} disabled={!page.enabled} /></label>
@@ -429,8 +533,8 @@ export function PdfOrderImporter({
                   <label className="wide">Endereço<textarea value={page.installationAddress} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => updatePage(page.key, "installationAddress", event.target.value)} disabled={!page.enabled} /></label>
                   <label className="wide">Materiais e especificações<textarea value={page.materials} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => updatePage(page.key, "materials", event.target.value)} disabled={!page.enabled} /></label>
                   <label className="wide">Observações<textarea value={page.orderNotes} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => updatePage(page.key, "orderNotes", event.target.value)} disabled={!page.enabled} /></label>
-                </div>
-                <div className="pdf-page-detection"><span>Cliente lido: <b>{page.clientName || "não identificado"}</b></span><span>Cadastro selecionado: <b>{activeClientName(client)}</b></span><span>Arquivo no Drive: <b>{page.image.name}</b> · pasta Documentos</span></div>
+                </div>}
+                <div className="pdf-page-detection"><span>Cliente lido: <b>{page.clientName || "não identificado"}</b></span>{page.importMode === "new_order" && <span>Cadastro selecionado: <b>{activeClientName(client)}</b></span>}<span>Arquivo no Drive: <b>{page.image.name}</b> · pasta Documentos</span></div>
               </div>
             </article>;
           })}
@@ -440,7 +544,7 @@ export function PdfOrderImporter({
 
     <div className="actions pdf-import-actions">
       <button type="button" onClick={onCancel} disabled={busy || parsing}>Cancelar</button>
-      {!!pages.length && <button type="button" className="primary" onClick={() => void submitImport()} disabled={busy || parsing || !enabledPages.length}>{busy ? "Cadastrando…" : `Importar ${enabledPages.length} pedido(s)`}</button>}
+      {!!pages.length && <button type="button" className="primary" onClick={() => void submitImport()} disabled={busy || parsing || !orderPages.length}>{busy ? "Cadastrando…" : `Importar ${orderPages.length} pedido(s)${complementPages.length ? ` + ${complementPages.length} complemento(s)` : ""}`}</button>}
     </div>
   </div>;
 }

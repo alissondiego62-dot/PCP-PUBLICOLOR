@@ -27,6 +27,7 @@ const requiredFiles = [
   "SQL-VALIDAR-PUBLICOLOR-3.5.0-REVISADO.sql",
   "supabase/migrations/20260718010000_publicolor_3_5_0_revisado_kanban_agenda_instalacao.sql",
   "docs/ATUALIZACAO-3.5.0-REVISADO.md",
+  "docs/ATUALIZACAO-3.5.2.md",
   "COMO-ATUALIZAR-PUBLICOLOR-3.5.0-REVISADO.txt",
   "VALIDACAO-PUBLICOLOR-3.5.0-REVISADO.txt",
 ];
@@ -38,14 +39,14 @@ if (missing.length) {
 }
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-if (packageJson.version !== "3.5.0") {
+if (packageJson.version !== "3.5.2") {
   console.error(`Versão inválida no package.json: ${packageJson.version}`);
   process.exit(1);
 }
 
 const serviceWorker = fs.readFileSync(path.join(root, "public/service-worker.js"), "utf8");
-if (!serviceWorker.includes("v3.5.0")) {
-  console.error("O Service Worker não aponta para o cache 3.5.0.");
+if (!serviceWorker.includes("v3.5.2")) {
+  console.error("O Service Worker não aponta para o cache 3.5.2.");
   process.exit(1);
 }
 

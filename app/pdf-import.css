@@ -475,3 +475,93 @@
     grid-column: 1 / -1 !important;
   }
 }
+
+/* Publicolor PCP 3.5.2 · páginas complementares no importador de PDF */
+.pdf-page-header-controls {
+  display: flex;
+  align-items: end;
+  gap: 14px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.pdf-page-mode-label {
+  display: grid !important;
+  gap: 5px;
+  min-width: 210px;
+  color: #66566d;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pdf-page-mode-label select {
+  min-height: 38px;
+  border-color: #d8c9df;
+  background: #fff;
+}
+
+.pdf-page-card.complement-page {
+  border-left-color: #d49b17;
+  background: linear-gradient(180deg, #fffdf7, #fff);
+}
+
+.pdf-page-card.complement-page .pdf-page-editor > header > b {
+  color: #8a5b00;
+}
+
+.pdf-page-complement-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.pdf-page-complement-editor > label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #433448;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pdf-page-complement-editor select,
+.pdf-page-complement-editor textarea {
+  width: 100%;
+}
+
+.pdf-page-complement-editor textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.pdf-complement-callout {
+  display: grid;
+  gap: 3px;
+  padding: 11px 12px;
+  border: 1px solid #ead59d;
+  border-radius: 11px;
+  background: #fff8e6;
+  color: #69531c;
+}
+
+.pdf-complement-callout b {
+  color: #785600;
+  font-size: 12px;
+}
+
+.pdf-complement-callout span {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .pdf-page-header-controls {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pdf-page-mode-label {
+    min-width: 0;
+    width: 100%;
+  }
+}

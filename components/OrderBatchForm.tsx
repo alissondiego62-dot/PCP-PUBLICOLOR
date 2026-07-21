@@ -18,6 +18,8 @@ export type OrderDraftSubmissionItem = {
   notes: string;
   image: File | null;
   imageSource?: "manual" | "pdf_page";
+  additionalDocuments?: File[];
+  additionalDocumentNotes?: string[];
   suffix?: string;
 };
 

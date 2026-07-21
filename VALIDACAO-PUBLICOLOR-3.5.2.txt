@@ -1,0 +1,23 @@
+PUBLICOLOR PCP 3.5.2 - VALIDAÇÃO
+
+Alteração principal:
+- escolha por página entre Novo pedido e Complemento de outro pedido;
+- páginas complementares não criam novas OPs;
+- documentos complementares são enviados para o Google Drive do pedido selecionado;
+- página principal permanece como miniatura;
+- contadores e mensagens de confirmação foram atualizados.
+
+Banco de dados:
+- nenhuma migração nova necessária;
+- permanece válido o SQL 3.5.0 Revisado.
+
+Validações executadas:
+- sintaxe TS/TSX;
+- imports internos;
+- JSON;
+- CSS;
+- validação estrutural da release;
+- integridade do ZIP.
+
+Limitação do ambiente:
+- build completo não executado por ausência de node_modules e uso de Node.js 22, enquanto o projeto exige Node.js 24.
