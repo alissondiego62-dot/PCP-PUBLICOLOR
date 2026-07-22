@@ -1,0 +1,14 @@
+PUBLICOLOR PCP 3.5.5 - ATUALIZAÇÃO
+
+1. Substitua os arquivos do projeto pela versão 3.5.5.
+2. Preserve o arquivo .env.local ou as variáveis configuradas na Vercel.
+3. Execute:
+
+   corepack enable
+   pnpm install --frozen-lockfile
+   pnpm validate
+
+4. Publique novamente na Vercel.
+5. No navegador, use Ctrl + F5 para descartar o cache anterior.
+
+Não é necessário executar SQL.

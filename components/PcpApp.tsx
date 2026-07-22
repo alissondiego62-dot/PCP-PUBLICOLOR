@@ -145,18 +145,60 @@ function printGalleryDocument(printWindow: Window, galleries: PrintableOrderGall
 <title>Impressão de miniaturas Publicolor</title>
 <style>
   *{box-sizing:border-box}
-  html,body{margin:0;background:#fff;color:#1f1722;font-family:Arial,Helvetica,sans-serif}
-  .print-page{min-height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:5mm;padding:7mm;break-after:page;page-break-after:always}
+  html,body{margin:0;padding:0;background:#fff;color:#1f1722;font-family:Arial,Helvetica,sans-serif}
+  body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .print-page{
+    width:198mm;
+    height:285mm;
+    margin:0 auto;
+    display:grid;
+    grid-template-rows:10mm minmax(0,1fr) 5mm;
+    gap:2mm;
+    overflow:hidden;
+    break-after:page;
+    page-break-after:always;
+  }
   .print-page:last-child{break-after:auto;page-break-after:auto}
-  header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;border-bottom:1px solid #d9cddd;padding-bottom:3mm}
-  header b{font-size:14pt;color:#5f1d70}
-  header span{max-width:72%;font-size:8pt;text-align:right;color:#655a68;overflow-wrap:anywhere}
-  .image-frame{min-height:0;display:grid;place-items:center;overflow:hidden}
-  img{display:block;max-width:100%;max-height:250mm;width:auto;height:auto;object-fit:contain;object-position:center}
-  footer{text-align:center;font-size:7pt;color:#776d79}
-  @page{size:auto;margin:0}
-  @media screen{body{background:#eee}.print-page{width:min(210mm,100%);min-height:297mm;margin:12px auto;background:#fff;box-shadow:0 4px 24px #0002}}
-  @media print{.print-page{height:100vh;min-height:0}}
+  header{
+    min-width:0;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:5mm;
+    overflow:hidden;
+    border-bottom:.25mm solid #d9cddd;
+  }
+  header b{flex:0 0 auto;font-size:12pt;color:#5f1d70}
+  header span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:7.5pt;text-align:right;color:#655a68}
+  .image-frame{
+    min-width:0;
+    min-height:0;
+    width:100%;
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    overflow:hidden;
+  }
+  .image-frame img{
+    display:block;
+    width:100%;
+    height:100%;
+    max-width:none;
+    max-height:none;
+    object-fit:contain;
+    object-position:center;
+  }
+  footer{display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center;font-size:7pt;color:#776d79}
+  @page{size:A4 portrait;margin:6mm}
+  @media screen{
+    body{padding:12px;background:#eee}
+    .print-page{width:min(198mm,100%);height:min(285mm,calc(100vh - 24px));min-height:640px;margin:0 auto 12px;background:#fff;box-shadow:0 4px 24px #0002}
+  }
+  @media print{
+    html,body{width:198mm}
+    .print-page{width:198mm;height:285mm}
+  }
 </style>
 </head>
 <body>${sections}
@@ -616,7 +658,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
       if (event.key === "ArrowLeft") navigateImagePreview(-1);
       if (event.key === "ArrowRight") navigateImagePreview(1);
       if (event.key === "+" || event.key === "=") setImagePreviewZoom((current) => Math.min(2.5, current + 0.25));
-      if (event.key === "-") setImagePreviewZoom((current) => Math.max(0.5, current - 0.25));
+      if (event.key === "-") setImagePreviewZoom((current) => Math.max(1, current - 0.25));
     };
 
     window.addEventListener("keydown", handlePreviewKeyboard);
@@ -3724,7 +3766,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
               onClick={() => { setImagePreview((current) => current ? { ...current, index } : current); setImagePreviewZoom(1); }}
             >{index + 1}</button>)}
           </div>}
-          <button type="button" aria-label="Diminuir zoom" disabled={imagePreviewZoom <= 0.5} onClick={() => setImagePreviewZoom((current) => Math.max(0.5, current - 0.25))}>−</button>
+          <button type="button" aria-label="Diminuir zoom" disabled={imagePreviewZoom <= 1} onClick={() => setImagePreviewZoom((current) => Math.max(1, current - 0.25))}>−</button>
           <button type="button" className="image-preview-zoom-value" title="Restaurar zoom" onClick={() => setImagePreviewZoom(1)}>{Math.round(imagePreviewZoom * 100)}%</button>
           <button type="button" aria-label="Aumentar zoom" disabled={imagePreviewZoom >= 2.5} onClick={() => setImagePreviewZoom((current) => Math.min(2.5, current + 0.25))}>＋</button>
         </footer>

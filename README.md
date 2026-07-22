@@ -1,8 +1,15 @@
-# Publicolor PCP 3.5.4
+# Publicolor PCP 3.5.5
 
 Sistema operacional de PCP da Publicolor para pedidos, produção, agenda, compras, clientes, usuários e integrações.
 
 
+
+## Alterações da versão 3.5.5
+
+- Visualização ampliada com enquadramento integral da imagem, sem cortar topo, rodapé ou laterais.
+- Impressão A4 recalculada para manter a imagem inteira dentro da área física da folha.
+- Todas as páginas complementares continuam sendo impressas, uma por folha.
+- Zoom inicial fixado em 100%, com rolagem apenas quando houver ampliação.
 
 ## Alterações da versão 3.5.4
 
