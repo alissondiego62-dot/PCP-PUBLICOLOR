@@ -20,6 +20,7 @@ export type OrderDraftSubmissionItem = {
   imageSource?: "manual" | "pdf_page";
   additionalDocuments?: File[];
   additionalDocumentNotes?: string[];
+  sourceDocument?: File | null;
   suffix?: string;
 };
 
@@ -42,6 +43,7 @@ type DraftItem = {
   materials: string;
   notes: string;
   image: File | null;
+  sourceDocument: File | null;
 };
 
 type SharedDefaults = Pick<DraftItem,
@@ -83,6 +85,7 @@ function createDraft(shared: SharedDefaults, index: number): DraftItem {
     materials: "",
     notes: "",
     image: null,
+    sourceDocument: null,
   };
 }
 
@@ -220,6 +223,7 @@ export function OrderBatchForm({
       key: crypto.randomUUID(),
       suffix: nextSuffix(current),
       image: null,
+      sourceDocument: null,
     }]);
   }
 
@@ -288,6 +292,14 @@ export function OrderBatchForm({
         setLocalError(`${label}: a miniatura pode ter no máximo 5 MB.`);
         return;
       }
+      if (item.sourceDocument && item.sourceDocument.type !== "application/pdf" && !item.sourceDocument.name.toLocaleLowerCase("pt-BR").endsWith(".pdf")) {
+        setLocalError(`${label}: o arquivo original precisa ser um PDF.`);
+        return;
+      }
+      if (item.sourceDocument && item.sourceDocument.size > 50 * 1024 * 1024) {
+        setLocalError(`${label}: o PDF original pode ter no máximo 50 MB.`);
+        return;
+      }
     }
 
     await onSubmit({
@@ -308,6 +320,7 @@ export function OrderBatchForm({
         materials: item.materials.trim(),
         notes: item.notes.trim(),
         image: item.image,
+        sourceDocument: item.sourceDocument,
         imageSource: "manual",
       })),
     });
@@ -392,6 +405,7 @@ export function OrderBatchForm({
                 <label className="wide">Materiais e especificações<textarea value={item.materials} onChange={(event) => updateItem(item.key, "materials", event.target.value)} placeholder="Ex.: ACM 3 mm, adesivo automotivo, LED..." /></label>
                 <label className="wide">Observações<textarea value={item.notes} onChange={(event) => updateItem(item.key, "notes", event.target.value)} placeholder="Informações para produção, acabamento e instalação" /></label>
                 <label className="wide image-upload-field">Miniatura do pedido (PNG)<input type="file" accept="image/png,.png" onChange={(event) => updateItem(item.key, "image", event.target.files?.[0] || null)} /><small>{item.image ? item.image.name : "Arquivo PNG de até 5 MB."}</small></label>
+                <label className="wide image-upload-field">Arquivo original da OS (PDF opcional)<input type="file" accept="application/pdf,.pdf" onChange={(event) => updateItem(item.key, "sourceDocument", event.target.files?.[0] || null)} /><small>{item.sourceDocument ? item.sourceDocument.name : "Se informado, o PDF será anexado automaticamente no Google Drive desta OP."}</small></label>
               </div>
             </article>;
           })}

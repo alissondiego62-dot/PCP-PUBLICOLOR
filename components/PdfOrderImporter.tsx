@@ -16,7 +16,9 @@ import { automaticOrderNumberHint, requiresAutomaticOrderNumber } from "@/lib/or
 const PDFJS_VERSION = "4.10.38";
 const MAX_PDF_SIZE = 50 * 1024 * 1024;
 const MAX_PAGES = 80;
-const MAX_THUMBNAIL_SIZE = 4.8 * 1024 * 1024;
+const A4_LANDSCAPE_WIDTH = 1600;
+const A4_LANDSCAPE_HEIGHT = Math.round((A4_LANDSCAPE_WIDTH * 210) / 297);
+const A4_PADDING = 28;
 
 type PdfPageImportMode = "new_order" | "complement";
 
@@ -37,6 +39,7 @@ type ImportedPage = ParsedPdfOrderPage & {
   orderNotes: string;
   image: File;
   previewUrl: string;
+  useAsThumbnail: boolean;
 };
 
 type Props = {
@@ -76,29 +79,41 @@ function canvasToBlob(canvas: HTMLCanvasElement) {
 }
 
 async function renderPageAsPng(page: PdfPageLike, fileName: string) {
-  const baseViewport = page.getViewport({ scale: 1 });
-  let scale = Math.min(1.6, 1500 / Math.max(1, baseViewport.width));
-  let blob: Blob | null = null;
+  const sourceViewport = page.getViewport({ scale: 1 });
+  const availableWidth = A4_LANDSCAPE_WIDTH - A4_PADDING * 2;
+  const availableHeight = A4_LANDSCAPE_HEIGHT - A4_PADDING * 2;
+  const fitScale = Math.min(
+    availableWidth / Math.max(1, sourceViewport.width),
+    availableHeight / Math.max(1, sourceViewport.height),
+  );
+  const pageViewport = page.getViewport({ scale: fitScale });
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const viewport = page.getViewport({ scale });
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(viewport.width));
-    canvas.height = Math.max(1, Math.round(viewport.height));
-    const context = canvas.getContext("2d", { alpha: false });
-    if (!context) throw new Error("O navegador não conseguiu preparar a imagem da página.");
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvasContext: context, viewport }).promise;
-    blob = await canvasToBlob(canvas);
-    canvas.width = 1;
-    canvas.height = 1;
-    if (blob.size <= MAX_THUMBNAIL_SIZE) break;
-    scale *= 0.78;
-  }
+  const pageCanvas = document.createElement("canvas");
+  pageCanvas.width = Math.max(1, Math.round(pageViewport.width));
+  pageCanvas.height = Math.max(1, Math.round(pageViewport.height));
+  const pageContext = pageCanvas.getContext("2d", { alpha: false });
+  if (!pageContext) throw new Error("O navegador não conseguiu preparar a imagem da página.");
+  pageContext.fillStyle = "#ffffff";
+  pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+  await page.render({ canvasContext: pageContext, viewport: pageViewport }).promise;
 
-  if (!blob) throw new Error("Não foi possível gerar a miniatura da página.");
-  if (blob.size > 5 * 1024 * 1024) throw new Error("A miniatura gerada ficou maior que 5 MB. Reduza a complexidade do PDF.");
+  const a4Canvas = document.createElement("canvas");
+  a4Canvas.width = A4_LANDSCAPE_WIDTH;
+  a4Canvas.height = A4_LANDSCAPE_HEIGHT;
+  const a4Context = a4Canvas.getContext("2d", { alpha: false });
+  if (!a4Context) throw new Error("O navegador não conseguiu preparar a folha A4 em paisagem.");
+  a4Context.fillStyle = "#ffffff";
+  a4Context.fillRect(0, 0, a4Canvas.width, a4Canvas.height);
+  const offsetX = Math.round((a4Canvas.width - pageCanvas.width) / 2);
+  const offsetY = Math.round((a4Canvas.height - pageCanvas.height) / 2);
+  a4Context.drawImage(pageCanvas, offsetX, offsetY);
+
+  const blob = await canvasToBlob(a4Canvas);
+  pageCanvas.width = 1;
+  pageCanvas.height = 1;
+  a4Canvas.width = 1;
+  a4Canvas.height = 1;
+  if (blob.size > 5 * 1024 * 1024) throw new Error("A miniatura A4 gerada ficou maior que 5 MB. Reduza a complexidade do PDF.");
   return new File([blob], fileName, { type: "image/png", lastModified: Date.now() });
 }
 
@@ -189,7 +204,12 @@ export function PdfOrderImporter({
       const anyTarget = current.find((page) => page.enabled && page.importMode === "new_order" && page.key !== key);
       const fallbackTargetKey = previousTarget?.key || anyTarget?.key || "";
       const next = current.map((page) => page.key === key
-        ? { ...page, importMode, complementTargetKey: importMode === "complement" ? (page.complementTargetKey || fallbackTargetKey) : "" }
+        ? {
+          ...page,
+          importMode,
+          complementTargetKey: importMode === "complement" ? (page.complementTargetKey || fallbackTargetKey) : "",
+          useAsThumbnail: importMode === "complement" ? page.useAsThumbnail : false,
+        }
         : page);
       if (importMode === "complement") {
         const remainingOrderTarget = next.find((page) => page.enabled && page.importMode === "new_order" && page.key !== key)?.key || "";
@@ -198,6 +218,20 @@ export function PdfOrderImporter({
           : page);
       }
       return next;
+    });
+  }
+
+  function setComplementThumbnail(key: string, enabled: boolean) {
+    setPages((current) => {
+      const source = current.find((page) => page.key === key);
+      if (!source) return current;
+      return current.map((page) => {
+        if (page.key === key) return { ...page, useAsThumbnail: enabled };
+        if (enabled && source.complementTargetKey && page.key !== key && page.importMode === "complement" && page.complementTargetKey === source.complementTargetKey) {
+          return { ...page, useAsThumbnail: false };
+        }
+        return page;
+      });
     });
   }
 
@@ -295,6 +329,7 @@ export function PdfOrderImporter({
         orderNotes: combineNotes(parsed, file.name),
         image,
         previewUrl,
+        useAsThumbnail: false,
       })));
       setWarnings(parsedPages.flatMap((page) => page.parsed.warnings));
       setProgress(100);
@@ -331,6 +366,18 @@ export function PdfOrderImporter({
     const invalidComplement = complementPages.find((page) => !page.complementTargetKey || !selectedOrderKeys.has(page.complementTargetKey));
     if (invalidComplement) {
       setError(`Página ${invalidComplement.pageNumber}: selecione o pedido que receberá esta página complementar.`);
+      return;
+    }
+
+    const repeatedThumbnailTarget = complementPages.reduce<Record<string, number>>((acc, page) => {
+      if (!page.useAsThumbnail || !page.complementTargetKey) return acc;
+      acc[page.complementTargetKey] = (acc[page.complementTargetKey] || 0) + 1;
+      return acc;
+    }, {});
+    const duplicatedThumbnailTarget = Object.entries(repeatedThumbnailTarget).find(([, count]) => count > 1);
+    if (duplicatedThumbnailTarget) {
+      const target = orderPages.find((page) => page.key === duplicatedThumbnailTarget[0]);
+      setError(`Escolha somente uma página complementar como miniatura principal para ${target ? orderNumberLabel(target) : "o pedido selecionado"}.`);
       return;
     }
 
@@ -409,6 +456,11 @@ export function PdfOrderImporter({
       baseOp: baseOp.trim(),
       items: resolvedPages.map((page) => {
         const complements = complementsByTarget.get(page.key) || [];
+        const selectedComplement = complements.find((item) => item.useAsThumbnail);
+        const selectedThumbnail = selectedComplement || page;
+        const galleryPages = selectedComplement
+          ? [page, ...complements.filter((item) => item.key !== selectedComplement.key)]
+          : complements;
         const complementNoteLines = complements.map((item) => `Página complementar ${item.pageNumber}/${item.totalPages}: ${item.job.trim() || "documento complementar"}.`);
         return {
           opNumber: isBatch
@@ -424,11 +476,14 @@ export function PdfOrderImporter({
           installationAddress: page.installationAddress.trim(),
           materials: page.materials.trim(),
           notes: [page.orderNotes.trim(), ...complementNoteLines].filter(Boolean).join("\n"),
-          image: page.image,
+          image: selectedThumbnail.image,
+          sourceDocument: sourceFile,
           imageSource: "pdf_page" as const,
-          additionalDocuments: complements.map((item) => item.image),
-          additionalDocumentNotes: complements.map((item) => [
-            `Página ${item.pageNumber}/${item.totalPages} adicionada como complemento da página ${page.pageNumber}.`,
+          additionalDocuments: galleryPages.map((item) => item.image),
+          additionalDocumentNotes: galleryPages.map((item) => [
+            item.key === page.key
+              ? `Página principal original ${page.pageNumber}/${page.totalPages}, preservada como página complementar porque outra página foi selecionada para a miniatura.`
+              : `Página ${item.pageNumber}/${item.totalPages} adicionada como complemento da página ${page.pageNumber}.`,
             item.job.trim() ? `Descrição: ${item.job.trim()}` : "",
             item.orderNotes.trim(),
           ].filter(Boolean).join("\n")),
@@ -443,7 +498,7 @@ export function PdfOrderImporter({
       <div>
         <small>IMPORTAÇÃO INTELIGENTE</small>
         <h3>Selecione a ordem de serviço em PDF</h3>
-        <p>Cada página pode criar um novo pedido ou ser anexada como complemento de outro pedido do mesmo PDF.</p>{sourceFile && <span className="pdf-source-file">{sourceFile.name} · {(sourceFile.size / 1024 / 1024).toFixed(2)} MB</span>}
+        <p>Cada página pode criar um novo pedido ou ser anexada como complemento de outro pedido do mesmo PDF. O PDF original também será anexado automaticamente ao Google Drive de cada pedido criado.</p>{sourceFile && <span className="pdf-source-file">{sourceFile.name} · {(sourceFile.size / 1024 / 1024).toFixed(2)} MB</span>}
       </div>
       <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -515,11 +570,16 @@ export function PdfOrderImporter({
                 {page.importMode === "complement" ? <div className="pdf-page-complement-editor">
                   <div className="pdf-complement-callout"><b>Esta página não criará um novo pedido.</b><span>Ela será salva na pasta Documentos e vinculada ao pedido escolhido abaixo.</span></div>
                   <label>Adicionar como complemento de
-                    <select value={page.complementTargetKey} disabled={!page.enabled} onChange={(event: ChangeEvent<HTMLSelectElement>) => updatePage(page.key, "complementTargetKey", event.target.value)}>
+                    <select value={page.complementTargetKey} disabled={!page.enabled} onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+                      const nextTarget = event.target.value;
+                      updatePage(page.key, "complementTargetKey", nextTarget);
+                      if (!nextTarget) updatePage(page.key, "useAsThumbnail", false);
+                    }}>
                       <option value="">Selecione o pedido</option>
                       {targetCandidates.map((item) => <option key={item.key} value={item.key}>{`Página ${item.pageNumber} · ${orderNumberLabel(item)}`}</option>)}
                     </select>
                   </label>
+                  <label className="pdf-page-toggle"><input type="checkbox" checked={page.useAsThumbnail} disabled={!page.enabled || !page.complementTargetKey} onChange={(event: ChangeEvent<HTMLInputElement>) => setComplementThumbnail(page.key, event.target.checked)} /><span>Usar esta página como miniatura principal do pedido selecionado</span></label>
                   <label>Descrição do complemento<textarea value={page.job} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => updatePage(page.key, "job", event.target.value)} disabled={!page.enabled} placeholder="Ex.: detalhe técnico, vista lateral ou continuação do projeto" /></label>
                   <label>Observações da página<textarea value={page.orderNotes} onChange={(event: ChangeEvent<HTMLTextAreaElement>) => updatePage(page.key, "orderNotes", event.target.value)} disabled={!page.enabled} /></label>
                 </div> : <div className="form-grid pdf-page-fields">

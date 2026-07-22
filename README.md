@@ -1,6 +1,14 @@
-# Publicolor PCP 3.5.5
+# Publicolor PCP 3.5.6
 
 Sistema operacional de PCP da Publicolor para pedidos, produção, agenda, compras, clientes, usuários e integrações.
+
+## Alterações da versão 3.5.6
+
+- Cada página de PDF é convertida em PNG dentro de uma folha A4 em paisagem, centralizada e sem recorte.
+- O importador sempre anexa o PDF original ao Google Drive de cada pedido criado.
+- Páginas complementares podem ser escolhidas como miniatura principal do pedido.
+- A página originalmente principal é preservada na galeria quando outra página é escolhida como miniatura.
+- O cadastro manual de pedido ganhou um campo para anexar o PDF original diretamente ao Google Drive.
 
 
 

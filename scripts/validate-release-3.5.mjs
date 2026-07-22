@@ -31,12 +31,15 @@ const requiredFiles = [
   "docs/ATUALIZACAO-3.5.3.md",
   "docs/ATUALIZACAO-3.5.4.md",
   "docs/ATUALIZACAO-3.5.5.md",
+  "docs/ATUALIZACAO-3.5.6.md",
   "app/release-3-5-3.css",
   "app/release-3-5-4.css",
   "app/release-3-5-5.css",
   "app/api/order-thumbnails/[orderId]/pages/route.ts",
   "COMO-ATUALIZAR-PUBLICOLOR-3.5.5.txt",
   "VALIDACAO-PUBLICOLOR-3.5.5.txt",
+  "COMO-ATUALIZAR-PUBLICOLOR-3.5.6.txt",
+  "VALIDACAO-PUBLICOLOR-3.5.6.txt",
   "COMO-ATUALIZAR-PUBLICOLOR-3.5.0-REVISADO.txt",
   "VALIDACAO-PUBLICOLOR-3.5.0-REVISADO.txt",
 ];
@@ -48,14 +51,14 @@ if (missing.length) {
 }
 
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-if (packageJson.version !== "3.5.5") {
+if (packageJson.version !== "3.5.6") {
   console.error(`Versão inválida no package.json: ${packageJson.version}`);
   process.exit(1);
 }
 
 const serviceWorker = fs.readFileSync(path.join(root, "public/service-worker.js"), "utf8");
-if (!serviceWorker.includes("v3.5.5")) {
-  console.error("O Service Worker não aponta para o cache 3.5.5.");
+if (!serviceWorker.includes("v3.5.6")) {
+  console.error("O Service Worker não aponta para o cache 3.5.6.");
   process.exit(1);
 }
 

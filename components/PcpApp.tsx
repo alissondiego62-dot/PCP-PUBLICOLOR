@@ -3124,11 +3124,11 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
       return false;
     }
 
-    if (resolvedItems.some((item) => item.imageSource === "pdf_page" || Boolean(item.additionalDocuments?.length))) {
+    if (resolvedItems.some((item) => item.imageSource === "pdf_page" || Boolean(item.additionalDocuments?.length) || Boolean(item.sourceDocument))) {
       try {
         const driveStatus = await driveAuthenticatedJson<DriveConnectionStatus>("/api/google-drive/status");
         if (!driveStatus.enabled || !driveStatus.connected) {
-          setError("Conecte o Google Drive em Configurações antes de importar o PDF. As páginas serão armazenadas no Drive e usadas como miniaturas dos pedidos.");
+          setError("Conecte o Google Drive em Configurações antes de cadastrar pedidos com PDF ou documentos anexos. O PDF original e as páginas importadas são armazenados no Drive.");
           return false;
         }
       } catch (driveError) {
@@ -3188,11 +3188,27 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     for (const item of resolvedItems) {
       const additionalDocuments = item.additionalDocuments || [];
       const additionalDocumentNotes = item.additionalDocumentNotes || [];
-      if (!item.image && !additionalDocuments.length) continue;
+      const sourceDocument = item.sourceDocument || null;
+      if (!item.image && !additionalDocuments.length && !sourceDocument) continue;
       const orderId = createdByOp.get(item.opNumber);
       if (!orderId) {
         imageWarnings.push(`OP ${item.opNumber}: registro criado, mas não foi possível localizar os documentos importados.`);
         continue;
+      }
+
+      if (sourceDocument) {
+        try {
+          await uploadFileToOrderDrive({
+            orderId,
+            file: sourceDocument as File,
+            category: "document",
+            notes: item.imageSource === "pdf_page"
+              ? `PDF original importado para gerar as páginas da OP ${item.opNumber}.`
+              : `PDF original anexado no cadastro da OP ${item.opNumber}.`,
+          });
+        } catch (driveError) {
+          imageWarnings.push(`OP ${item.opNumber}, PDF original: ${driveError instanceof Error ? driveError.message : "não foi possível salvar o PDF original no Google Drive"}`);
+        }
       }
 
       if (item.imageSource === "pdf_page" || additionalDocuments.length) {
