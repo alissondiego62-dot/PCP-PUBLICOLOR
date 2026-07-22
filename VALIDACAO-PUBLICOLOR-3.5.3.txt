@@ -1,0 +1,28 @@
+PUBLICOLOR PCP 3.5.3 - RELATÓRIO DE VALIDAÇÃO
+
+VALIDAÇÕES EXECUTADAS NESTE PACOTE
+[OK] Estrutura obrigatória da versão: 29 arquivos conferidos.
+[OK] Transpilação sintática: 99 arquivos TypeScript/TSX, sem erros de sintaxe.
+[OK] JavaScript do service worker e do validador de release: sintaxe válida.
+[OK] OAuth solicita access_type=offline, prompt=consent e include_granted_scopes=true.
+[OK] Renovação automática usa o refresh_token e repete chamadas após HTTP 401.
+[OK] Token expirado/revogado gera erro estruturado para reconexão.
+[OK] Código ativo não gera nem entrega miniaturas WebP.
+[OK] Miniatura principal é normalizada para PNG sem redimensionamento.
+[OK] Identificação e ordenação de páginas PNG complementares testadas.
+[OK] Visualização ampliada possui setas, teclado, indicadores e gesto lateral.
+[OK] Nenhuma pasta node_modules, dist, .next, .git ou coverage foi incluída.
+
+VALIDAÇÕES A EXECUTAR NO AMBIENTE COM DEPENDÊNCIAS
+[ ] pnpm install --frozen-lockfile
+[ ] pnpm typecheck
+[ ] pnpm lint
+[ ] pnpm build
+[ ] Testar reconexão real com pcp.publicolor@gmail.com.
+[ ] Testar upload, sincronização e exclusão de arquivo no Google Drive.
+[ ] Abrir uma OP com duas ou mais páginas e testar a galeria no desktop e celular.
+
+OBSERVAÇÃO
+O build completo não foi executado no ambiente de preparação porque o acesso ao
+registro npm estava indisponível e o ZIP original não continha node_modules.
+Não foi necessário criar ou alterar SQL para esta atualização.

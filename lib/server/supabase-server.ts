@@ -92,7 +92,21 @@ export async function requireAppPermission(request: Request, permissionKey: stri
 export function responseMessage(error: unknown, fallback = "Não foi possível concluir a operação.") {
   if (error instanceof Response) return error;
   const message = error instanceof Error ? error.message : fallback;
-  return Response.json({ error: message }, { status: 500 });
+  const structured = error as {
+    status?: unknown;
+    code?: unknown;
+    reconnectRequired?: unknown;
+  } | null;
+  const status = typeof structured?.status === "number" && structured.status >= 400 && structured.status <= 599
+    ? structured.status
+    : 500;
+  const code = typeof structured?.code === "string" ? structured.code : undefined;
+  const reconnectRequired = structured?.reconnectRequired === true;
+  return Response.json({
+    error: message,
+    ...(code ? { code } : {}),
+    ...(reconnectRequired ? { reconnect_required: true } : {}),
+  }, { status });
 }
 
 export function requestOrigin(request: Request) {

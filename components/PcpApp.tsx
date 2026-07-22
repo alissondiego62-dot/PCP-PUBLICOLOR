@@ -55,7 +55,12 @@ import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { usePcpRealtime } from "@/hooks/usePcpRealtime";
 import { useObservability } from "@/hooks/useObservability";
 import { loadOfflineSnapshot, saveOfflineSnapshot } from "@/lib/offline-snapshot";
-import { fetchOptimizedOrderThumbnail } from "@/services/order-thumbnails";
+import {
+  fetchOptimizedOrderThumbnail,
+  fetchOrderThumbnailGallery,
+  releaseOrderThumbnailGallery,
+  type OrderThumbnailGalleryPage,
+} from "@/services/order-thumbnails";
 import { reportClientEvent } from "@/services/observability-client";
 import { GlobalSearch } from "@/features/search/GlobalSearch";
 import { PendingCenter } from "@/features/pending/PendingCenter";
@@ -271,7 +276,14 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   const [notice, setNotice] = useState("");
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
-  const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null);
+  const [imagePreview, setImagePreview] = useState<{
+    orderId: string;
+    alt: string;
+    pages: OrderThumbnailGalleryPage[];
+    index: number;
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
   const [imagePreviewZoom, setImagePreviewZoom] = useState(1);
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const [creatingOrder, setCreatingOrder] = useState(false);
@@ -334,6 +346,9 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   const imagePathsRef = useRef<Record<string, string>>({});
   const thumbnailRequestsRef = useRef<Set<string>>(new Set());
   const thumbnailBackgroundGenerationRef = useRef(0);
+  const imagePreviewRequestRef = useRef(0);
+  const imagePreviewTouchStartRef = useRef<number | null>(null);
+  const imagePreviewOwnedPagesRef = useRef<OrderThumbnailGalleryPage[]>([]);
   const accessLogIdRef = useRef<string | null>(null);
   const [boardScrollWidth, setBoardScrollWidth] = useState(0);
   const isOnline = useOnlineStatus();
@@ -357,6 +372,78 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     activeKanbanSectorIndexRef.current = activeKanbanSectorIndex;
   }, [activeKanbanSectorIndex]);
 
+  const closeImagePreview = useCallback(() => {
+    imagePreviewRequestRef.current += 1;
+    releaseOrderThumbnailGallery(imagePreviewOwnedPagesRef.current);
+    imagePreviewOwnedPagesRef.current = [];
+    setImagePreview(null);
+    setImagePreviewZoom(1);
+  }, []);
+
+  const navigateImagePreview = useCallback((direction: -1 | 1) => {
+    setImagePreview((current) => {
+      if (!current || current.pages.length < 2) return current;
+      const nextIndex = (current.index + direction + current.pages.length) % current.pages.length;
+      return { ...current, index: nextIndex };
+    });
+    setImagePreviewZoom(1);
+  }, []);
+
+  const openOrderImagePreview = useCallback(async (order: Order, initialUrl: string) => {
+    if (!initialUrl) return;
+    imagePreviewRequestRef.current += 1;
+    const requestId = imagePreviewRequestRef.current;
+    releaseOrderThumbnailGallery(imagePreviewOwnedPagesRef.current);
+    imagePreviewOwnedPagesRef.current = [];
+    setImagePreviewZoom(1);
+    setImagePreview({
+      orderId: order.id,
+      alt: `Miniatura da OP ${order.op_number}`,
+      pages: [{
+        key: "main",
+        fileName: `OP ${order.op_number}.png`,
+        pageNumber: 1,
+        isMain: true,
+        src: initialUrl,
+        ownedObjectUrl: false,
+      }],
+      index: 0,
+      loading: true,
+      error: null,
+    });
+
+    try {
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token;
+      if (sessionError || !accessToken) throw new Error("Sessão expirada. Entre novamente no sistema.");
+      const pages = await fetchOrderThumbnailGallery(order, initialUrl, accessToken);
+      if (imagePreviewRequestRef.current !== requestId) {
+        releaseOrderThumbnailGallery(pages);
+        return;
+      }
+      imagePreviewOwnedPagesRef.current = pages;
+      setImagePreview((current) => current?.orderId === order.id
+        ? { ...current, pages, index: 0, loading: false, error: null }
+        : current);
+    } catch (previewError) {
+      if (imagePreviewRequestRef.current !== requestId) return;
+      setImagePreview((current) => current?.orderId === order.id
+        ? {
+          ...current,
+          loading: false,
+          error: previewError instanceof Error
+            ? previewError.message
+            : "Não foi possível carregar as páginas complementares.",
+        }
+        : current);
+    }
+  }, []);
+
+  useEffect(() => () => {
+    releaseOrderThumbnailGallery(imagePreviewOwnedPagesRef.current);
+    imagePreviewOwnedPagesRef.current = [];
+  }, []);
+
   useEffect(() => {
     if (!imagePreview) return;
 
@@ -364,7 +451,9 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     document.body.style.overflow = "hidden";
 
     const handlePreviewKeyboard = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setImagePreview(null);
+      if (event.key === "Escape") closeImagePreview();
+      if (event.key === "ArrowLeft") navigateImagePreview(-1);
+      if (event.key === "ArrowRight") navigateImagePreview(1);
       if (event.key === "+" || event.key === "=") setImagePreviewZoom((current) => Math.min(2.5, current + 0.25));
       if (event.key === "-") setImagePreviewZoom((current) => Math.max(0.5, current - 0.25));
     };
@@ -374,7 +463,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handlePreviewKeyboard);
     };
-  }, [imagePreview]);
+  }, [closeImagePreview, imagePreview, navigateImagePreview]);
 
   useEffect(() => {
     const savedSidebarState = window.localStorage.getItem("pcp-sidebar-collapsed");
@@ -3083,7 +3172,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         onDrop={(sectorId, status) => void move(sectorId, status)}
         onOpenOrder={openOrder}
         onDeleteOrder={(order) => void deleteOrder(order)}
-        onPreview={(order, url) => { setImagePreviewZoom(1); setImagePreview({ src: url, alt: `Miniatura da OP ${order.op_number}` }); }}
+        onPreview={(order, url) => { void openOrderImagePreview(order, url); }}
         onThumbnailVisible={requestOrderThumbnail}
         onMoveOrder={setMoveOrderTarget}
         onChangeStatus={setStatusOrderTarget}
@@ -3238,8 +3327,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
             aria-label={`Ampliar miniatura da OP ${modal.op_number}`}
             title="Clique para ampliar"
             onClick={() => {
-              setImagePreviewZoom(1);
-              setImagePreview({ src: cardImageUrl(modal), alt: `Miniatura da OP ${modal.op_number}` });
+              void openOrderImagePreview(modal, cardImageUrl(modal));
             }}
           ><img src={cardImageUrl(modal)} alt={`Miniatura da OP ${modal.op_number}`} /></button> : <div className="v3-order-image"><span>PNG<br />Sem miniatura</span></div>}
           <div><p className="eyebrow">ORDEM DE SERVIÇO · OP {modal.op_number}</p><h2>{modal.description}</h2><p>{modal.client_name}</p><div className="v3-order-badges"><span data-priority={modal.priority}>{priorityLabel[modal.priority]}</span><span>{statusLabel(modal.status)}</span><span>{sectors.find((s) => s.id === modal.sector_id)?.name || "—"}</span></div></div>
@@ -3332,6 +3420,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
             orderId={modal.id}
             opNumber={modal.op_number}
             canOperate={canUploadFiles}
+            canReconnect={isAdmin}
             onUploaded={() => loadOrderDetails(modal.id, true)}
             onSynchronized={(files) => setOrderFiles(files)}
             onError={setDetailError}
@@ -3419,18 +3508,46 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
       onClose={() => !workspaceBusy && setMaterialEditor(null)}
       onSave={saveMaterialEditor}
     />}
-    {imagePreview && <div className="overlay image-preview-overlay" onMouseDown={() => setImagePreview(null)}>
+    {imagePreview && <div className="overlay image-preview-overlay" onMouseDown={closeImagePreview}>
       <div className="image-preview-modal" role="dialog" aria-modal="true" aria-label="Visualização ampliada da miniatura" onMouseDown={(event) => event.stopPropagation()}>
         <header className="image-preview-toolbar">
-          <div><small>MINIATURA DA ORDEM</small><b>{imagePreview.alt}</b></div>
-          <button type="button" className="image-preview-close" aria-label="Fechar imagem ampliada" title="Fechar" onClick={() => setImagePreview(null)}>×</button>
-        </header>
-        <div className="image-preview-stage">
-          <div className="image-preview-canvas" style={{ width: `${imagePreviewZoom * 100}%`, height: `${imagePreviewZoom * 100}%` }}>
-            <img src={imagePreview.src} alt={imagePreview.alt} />
+          <div>
+            <small>MINIATURA DA ORDEM · PÁGINA {imagePreview.index + 1} DE {imagePreview.pages.length}</small>
+            <b>{imagePreview.alt}</b>
+            <span>{imagePreview.pages[imagePreview.index]?.fileName || "Miniatura principal.png"}</span>
           </div>
+          <button type="button" className="image-preview-close" aria-label="Fechar imagem ampliada" title="Fechar" onClick={closeImagePreview}>×</button>
+        </header>
+        <div
+          className="image-preview-stage"
+          onTouchStart={(event) => { imagePreviewTouchStartRef.current = event.changedTouches[0]?.clientX ?? null; }}
+          onTouchEnd={(event) => {
+            const start = imagePreviewTouchStartRef.current;
+            imagePreviewTouchStartRef.current = null;
+            const end = event.changedTouches[0]?.clientX;
+            if (start === null || end === undefined || Math.abs(end - start) < 48) return;
+            navigateImagePreview(end > start ? -1 : 1);
+          }}
+        >
+          {imagePreview.pages.length > 1 && <button type="button" className="image-preview-page-nav previous" aria-label="Ver página anterior" onClick={() => navigateImagePreview(-1)}>‹</button>}
+          <div className="image-preview-canvas" style={{ width: `${imagePreviewZoom * 100}%`, height: `${imagePreviewZoom * 100}%` }}>
+            <img src={imagePreview.pages[imagePreview.index]?.src || ""} alt={`${imagePreview.alt}, página ${imagePreview.index + 1}`} />
+          </div>
+          {imagePreview.pages.length > 1 && <button type="button" className="image-preview-page-nav next" aria-label="Ver próxima página" onClick={() => navigateImagePreview(1)}>›</button>}
+          {imagePreview.loading && <div className="image-preview-loading">Carregando páginas complementares…</div>}
+          {imagePreview.error && <div className="image-preview-error">{imagePreview.error}</div>}
         </div>
         <footer className="image-preview-controls">
+          {imagePreview.pages.length > 1 && <div className="image-preview-pages" aria-label="Páginas da miniatura">
+            {imagePreview.pages.map((page, index) => <button
+              type="button"
+              key={page.key}
+              className={index === imagePreview.index ? "active" : ""}
+              aria-label={`Abrir página ${index + 1}: ${page.fileName}`}
+              title={page.fileName}
+              onClick={() => { setImagePreview((current) => current ? { ...current, index } : current); setImagePreviewZoom(1); }}
+            >{index + 1}</button>)}
+          </div>}
           <button type="button" aria-label="Diminuir zoom" disabled={imagePreviewZoom <= 0.5} onClick={() => setImagePreviewZoom((current) => Math.max(0.5, current - 0.25))}>−</button>
           <button type="button" className="image-preview-zoom-value" title="Restaurar zoom" onClick={() => setImagePreviewZoom(1)}>{Math.round(imagePreviewZoom * 100)}%</button>
           <button type="button" aria-label="Aumentar zoom" disabled={imagePreviewZoom >= 2.5} onClick={() => setImagePreviewZoom((current) => Math.min(2.5, current + 0.25))}>＋</button>

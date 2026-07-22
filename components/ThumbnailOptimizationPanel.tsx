@@ -39,7 +39,7 @@ export function ThumbnailOptimizationPanel() {
       setProgress({ done: 0, total: candidates.length, errors: 0 });
       setFeedback({
         type: "success",
-        text: `${candidates.length} miniatura(s) podem ser preparadas em WebP para carregamento rápido.`,
+        text: `${candidates.length} miniatura(s) PNG podem ser preparadas no cache do sistema.`,
       });
     } catch (error) {
       setFeedback({ type: "error", text: error instanceof Error ? error.message : "Falha ao analisar as miniaturas." });
@@ -50,7 +50,7 @@ export function ThumbnailOptimizationPanel() {
 
   async function optimize() {
     if (busy) return;
-    if (!window.confirm("Pré-gerar as miniaturas WebP de todos os pedidos? O processo pode levar alguns minutos, mas pode continuar em segundo plano enquanto esta tela permanece aberta.")) return;
+    if (!window.confirm("Preparar as miniaturas PNG de todos os pedidos? O processo pode levar alguns minutos, mas pode continuar em segundo plano enquanto esta tela permanece aberta.")) return;
 
     setBusy("optimize");
     setFeedback(null);
@@ -67,8 +67,8 @@ export function ThumbnailOptimizationPanel() {
       let done = 0;
       let errors = 0;
 
-      for (let index = 0; index < candidates.length; index += 4) {
-        const group = candidates.slice(index, index + 4);
+      for (let index = 0; index < candidates.length; index += 2) {
+        const group = candidates.slice(index, index + 2);
         const results = await Promise.allSettled(group.map(async (candidate) => {
           const response = await fetch(`/api/order-thumbnails/${encodeURIComponent(candidate.id)}?warm=1`, {
             headers: { authorization: `Bearer ${session.access_token}` },
@@ -85,8 +85,8 @@ export function ThumbnailOptimizationPanel() {
       setFeedback({
         type: errors ? "warning" : "success",
         text: errors
-          ? `${done - errors} miniatura(s) otimizadas e ${errors} falharam. Consulte o diagnóstico de integrações.`
-          : `${done} miniatura(s) preparadas. Os próximos acessos ao Kanban usarão arquivos WebP menores.`,
+          ? `${done - errors} miniatura(s) preparadas e ${errors} falharam. Consulte o diagnóstico de integrações.`
+          : `${done} miniatura(s) PNG preparadas. Os próximos acessos reutilizarão o cache do sistema.`,
       });
     } catch (error) {
       setFeedback({ type: "error", text: error instanceof Error ? error.message : "Falha ao otimizar as miniaturas." });
@@ -115,23 +115,23 @@ export function ThumbnailOptimizationPanel() {
   return <div className="platform-card thumbnail-optimization-card">
     <div className="platform-card-title">
       <span>⚡</span>
-      <div><small>DESEMPENHO</small><h3>Otimizar carregamento das miniaturas</h3></div>
+      <div><small>DESEMPENHO</small><h3>Preparar miniaturas PNG</h3></div>
     </div>
     <p className="platform-card-description">
-      Gera uma versão WebP reduzida no Supabase para cada miniatura do Google Drive. O Kanban carrega somente os cartões visíveis e reutiliza o cache deste aparelho.
+      Prepara no Supabase uma cópia PNG em resolução original para cada miniatura. O Kanban carrega os cartões visíveis e reutiliza o cache deste aparelho, sem reduzir a imagem para WebP.
     </p>
 
     {feedback && <div className={`platform-feedback ${feedback.type}`}>{feedback.text}</div>}
 
     {(busy === "optimize" || progress.done > 0) && <div className="thumbnail-optimization-progress">
-      <header><b>{busy === "optimize" ? "Otimizando…" : "Última execução"}</b><span>{progress.done} de {progress.total} · {percentage}%</span></header>
+      <header><b>{busy === "optimize" ? "Preparando…" : "Última execução"}</b><span>{progress.done} de {progress.total} · {percentage}%</span></header>
       <div><i style={{ width: `${percentage}%` }} /></div>
       {progress.errors > 0 && <small>{progress.errors} falha(s)</small>}
     </div>}
 
     <div className="platform-actions">
       <button type="button" onClick={() => void analyze()} disabled={Boolean(busy)}>{busy === "analyze" ? "Analisando…" : "Analisar"}</button>
-      <button type="button" className="primary" onClick={() => void optimize()} disabled={Boolean(busy)}>{busy === "optimize" ? "Otimizando…" : "Otimizar todas"}</button>
+      <button type="button" className="primary" onClick={() => void optimize()} disabled={Boolean(busy)}>{busy === "optimize" ? "Preparando…" : "Preparar todas"}</button>
       <button type="button" onClick={() => void clearLocalCache()} disabled={Boolean(busy)}>{busy === "clear" ? "Limpando…" : "Limpar cache deste aparelho"}</button>
     </div>
 

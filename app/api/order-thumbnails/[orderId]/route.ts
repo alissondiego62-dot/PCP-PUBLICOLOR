@@ -36,14 +36,19 @@ async function signedUrl(path: string) {
   return data.signedUrl;
 }
 
-async function removeObsoleteOptimizedFiles(orderId: string, keepFileName: string) {
+async function removeObsoleteThumbnailFiles(orderId: string, keepPath: string) {
   const admin = getSupabaseAdmin();
-  const folder = `optimized/${orderId}`;
-  const { data } = await admin.storage.from(BUCKET).list(folder, { limit: 100 });
-  const obsolete = (data || [])
-    .filter((file) => file.name.endsWith(".webp") && file.name !== keepFileName)
-    .map((file) => `${folder}/${file.name}`);
-  if (obsolete.length) await admin.storage.from(BUCKET).remove(obsolete);
+  const folders = [`optimized/${orderId}`, `png/${orderId}`];
+  const removable: string[] = [];
+
+  for (const folder of folders) {
+    const { data } = await admin.storage.from(BUCKET).list(folder, { limit: 100 });
+    for (const file of data || []) {
+      const path = `${folder}/${file.name}`;
+      if (path !== keepPath && /\.(?:webp|png)$/i.test(file.name)) removable.push(path);
+    }
+  }
+  if (removable.length) await admin.storage.from(BUCKET).remove(removable);
 }
 
 function redirectToImage(url: string) {
@@ -82,34 +87,35 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
       .update(order.main_image_path)
       .digest("hex")
       .slice(0, 20);
-    const fileName = `${signature}.webp`;
-    const cachePath = `optimized/${order.id}/${fileName}`;
+    const fileName = `${signature}.png`;
+    const cachePath = `png/${order.id}/${fileName}`;
 
     const existingSignedUrl = await signedUrl(cachePath);
     if (existingSignedUrl) return redirectToImage(existingSignedUrl);
 
     const original = await originalImage(order.main_image_path);
-    const image = await sharp(original)
+    // Mantém as dimensões originais. Apenas normaliza orientação e formato para
+    // PNG, substituindo definitivamente as miniaturas WebP reduzidas.
+    const image = await sharp(original, { limitInputPixels: 180_000_000 })
       .rotate()
-      .resize({ width: 520, height: 420, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 74, effort: 3 })
+      .png({ compressionLevel: 6, adaptiveFiltering: true })
       .toBuffer();
 
     const upload = await admin.storage.from(BUCKET).upload(cachePath, image, {
-      contentType: "image/webp",
+      contentType: "image/png",
       cacheControl: "31536000",
       upsert: true,
     });
-    if (upload.error) throw new Error(`Falha ao armazenar WebP: ${upload.error.message}`);
+    if (upload.error) throw new Error(`Falha ao armazenar a miniatura PNG: ${upload.error.message}`);
 
-    await removeObsoleteOptimizedFiles(order.id, fileName);
+    await removeObsoleteThumbnailFiles(order.id, cachePath);
     await logSystemEvent({
       kind: "integration",
       level: "info",
-      source: "thumbnail_optimizer",
-      action: "generate_webp",
+      source: "thumbnail_renderer",
+      action: "generate_png",
       status: "success",
-      message: `Miniatura WebP gerada para a OP ${order.op_number}.`,
+      message: `Miniatura PNG em resolução original gerada para a OP ${order.op_number}.`,
       orderId: order.id,
       durationMs: Date.now() - startedAt,
       metadata: { cachePath, bytes: image.byteLength },
@@ -117,20 +123,20 @@ export async function GET(request: Request, context: { params: Promise<{ orderId
     });
 
     const generatedSignedUrl = await signedUrl(cachePath);
-    if (!generatedSignedUrl) throw new Error("A miniatura foi criada, mas não foi possível gerar o link temporário.");
+    if (!generatedSignedUrl) throw new Error("A miniatura PNG foi criada, mas não foi possível gerar o link temporário.");
     return redirectToImage(generatedSignedUrl);
   } catch (error) {
     await logSystemEvent({
       kind: "api_error",
       level: "error",
-      source: "thumbnail_optimizer",
-      action: "serve_webp",
+      source: "thumbnail_renderer",
+      action: "serve_png",
       status: "error",
-      message: error instanceof Error ? error.message : "Falha desconhecida ao gerar miniatura.",
+      message: error instanceof Error ? error.message : "Falha desconhecida ao gerar miniatura PNG.",
       orderId: requestedOrderId,
       durationMs: Date.now() - startedAt,
       actor,
     });
-    return responseMessage(error, "Não foi possível gerar a miniatura otimizada.");
+    return responseMessage(error, "Não foi possível gerar a miniatura PNG.");
   }
 }

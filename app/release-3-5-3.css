@@ -1,0 +1,131 @@
+/* Publicolor PCP 3.5.3 · token Google Drive e miniaturas PNG multipágina */
+
+.drive-upload-status.disconnected{
+  align-items:start;
+}
+
+.drive-upload-status.disconnected>button{
+  justify-self:start;
+  min-height:36px;
+  margin-top:5px;
+  padding:0 14px;
+  border:0;
+  border-radius:8px;
+  background:#5f1d70;
+  color:#fff;
+  font-size:9px;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.drive-upload-status.disconnected>small{
+  color:#806d50;
+  font-size:8px;
+  line-height:1.55;
+}
+
+.image-preview-toolbar>div>span{
+  overflow:hidden;
+  color:#bbaabe;
+  font-size:9px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.image-preview-stage{
+  position:relative;
+  touch-action:pan-y pinch-zoom;
+}
+
+.image-preview-page-nav{
+  position:absolute;
+  z-index:5;
+  top:50%;
+  width:54px;
+  height:72px;
+  margin-top:-36px;
+  border:1px solid rgba(255,255,255,.2);
+  border-radius:12px;
+  background:rgba(36,22,41,.78);
+  color:#fff;
+  font-size:42px;
+  line-height:1;
+  cursor:pointer;
+  backdrop-filter:blur(5px);
+}
+
+.image-preview-page-nav.previous{left:14px}
+.image-preview-page-nav.next{right:14px}
+.image-preview-page-nav:hover{background:rgba(95,29,112,.94)}
+
+.image-preview-loading,
+.image-preview-error{
+  position:absolute;
+  z-index:6;
+  left:50%;
+  bottom:16px;
+  max-width:min(620px,calc(100% - 32px));
+  transform:translateX(-50%);
+  padding:9px 12px;
+  border-radius:9px;
+  font-size:9px;
+  font-weight:800;
+  text-align:center;
+  box-shadow:0 8px 26px rgba(0,0,0,.35);
+}
+
+.image-preview-loading{
+  background:rgba(255,255,255,.92);
+  color:#4f1b5d;
+}
+
+.image-preview-error{
+  border:1px solid #efb6b1;
+  background:rgba(255,238,236,.95);
+  color:#9c3931;
+}
+
+.image-preview-pages{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  max-width:min(50vw,620px);
+  overflow-x:auto;
+  padding:2px;
+}
+
+.image-preview-controls .image-preview-pages button{
+  flex:0 0 32px;
+  min-width:32px;
+  width:32px;
+  height:32px;
+  border-radius:50%;
+  font-size:9px;
+}
+
+.image-preview-controls .image-preview-pages button.active{
+  border-color:#ffd000;
+  background:#ffd000;
+  color:#3b153f;
+}
+
+@media(max-width:700px){
+  .image-preview-page-nav{
+    width:42px;
+    height:58px;
+    margin-top:-29px;
+    border-radius:10px;
+    font-size:34px;
+  }
+  .image-preview-page-nav.previous{left:6px}
+  .image-preview-page-nav.next{right:6px}
+  .image-preview-controls{
+    flex-wrap:wrap;
+  }
+  .image-preview-pages{
+    order:-1;
+    flex-basis:100%;
+    max-width:100%;
+  }
+}

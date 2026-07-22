@@ -65,8 +65,8 @@ export async function GET(request: Request) {
       expires_in?: number;
       error_description?: string;
     };
-    if (!tokenResponse.ok || !tokenPayload.access_token || !tokenPayload.refresh_token) {
-      throw new Error(tokenPayload.error_description || "O Google não retornou os tokens necessários. Tente autorizar novamente.");
+    if (!tokenResponse.ok || !tokenPayload.access_token) {
+      throw new Error(tokenPayload.error_description || "O Google não retornou o token de acesso necessário. Tente autorizar novamente.");
     }
 
     const userInfoResponse = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
@@ -81,7 +81,7 @@ export async function GET(request: Request) {
       await fetch("https://oauth2.googleapis.com/revoke", {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ token: tokenPayload.refresh_token }),
+        body: new URLSearchParams({ token: tokenPayload.refresh_token || tokenPayload.access_token }),
       }).catch(() => null);
       throw new Error(`A conta autorizada foi ${connectedEmail}. Use ${expectedEmail} ou altere o e-mail nas Configurações.`);
     }

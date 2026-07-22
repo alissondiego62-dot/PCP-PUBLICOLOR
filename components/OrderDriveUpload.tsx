@@ -55,11 +55,24 @@ type Props = {
   orderId: string;
   opNumber: string;
   canOperate: boolean;
+  canReconnect: boolean;
   onUploaded: () => Promise<void> | void;
   onSynchronized: (files: OrderFileEntry[]) => void;
   onError: (message: string) => void;
   onNotice: (message: string) => void;
 };
+
+class DriveClientError extends Error {
+  code: string | null;
+  reconnectRequired: boolean;
+
+  constructor(message: string, code?: string, reconnectRequired = false) {
+    super(message);
+    this.name = "DriveClientError";
+    this.code = code || null;
+    this.reconnectRequired = reconnectRequired;
+  }
+}
 
 async function sessionToken() {
   const { data, error } = await supabase.auth.getSession();
@@ -80,10 +93,10 @@ async function authenticatedJson<T>(path: string, init: RequestInit = {}) {
   });
 
   const raw = await response.text();
-  let payload: (T & { error?: string }) | null = null;
+  let payload: (T & { error?: string; code?: string; reconnect_required?: boolean }) | null = null;
   if (raw) {
     try {
-      payload = JSON.parse(raw) as T & { error?: string };
+      payload = JSON.parse(raw) as T & { error?: string; code?: string; reconnect_required?: boolean };
     } catch {
       payload = null;
     }
@@ -91,7 +104,11 @@ async function authenticatedJson<T>(path: string, init: RequestInit = {}) {
 
   if (!response.ok) {
     const detail = payload?.error || raw.trim();
-    throw new Error(detail || `Falha na comunicação com o Google Drive (${response.status}).`);
+    throw new DriveClientError(
+      detail || `Falha na comunicação com o Google Drive (${response.status}).`,
+      payload?.code,
+      Boolean(payload?.reconnect_required),
+    );
   }
 
   return (payload || {}) as T;
@@ -166,7 +183,7 @@ async function uploadResumable(file: File, uploadUrl: string, onProgress: (perce
   throw new Error("O Google Drive não confirmou a conclusão do arquivo.");
 }
 
-export function OrderDriveUpload({ orderId, opNumber, canOperate, onUploaded, onSynchronized, onError, onNotice }: Props) {
+export function OrderDriveUpload({ orderId, opNumber, canOperate, canReconnect, onUploaded, onSynchronized, onError, onNotice }: Props) {
   const [status, setStatus] = useState<DriveStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -175,6 +192,41 @@ export function OrderDriveUpload({ orderId, opNumber, canOperate, onUploaded, on
   const [progress, setProgress] = useState(0);
   const [currentFile, setCurrentFile] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  function requiresReconnect(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return (error instanceof DriveClientError && (
+      error.reconnectRequired || error.code === "GOOGLE_DRIVE_RECONNECT_REQUIRED"
+    )) || /expired|revoked|invalid_grant|reconecte|não está conectado|unauthorized|invalid credentials/i.test(message);
+  }
+
+  function registerDriveFailure(error: unknown) {
+    const message = error instanceof Error ? error.message : "Não foi possível acessar o Google Drive.";
+    if (requiresReconnect(error)) {
+      setStatus((current) => current ? { ...current, connected: false, connected_email: null } : current);
+      setSyncFeedback({
+        type: "error",
+        text: "A autorização do Google Drive expirou ou foi revogada. Reconecte a conta para voltar a enviar e sincronizar arquivos.",
+      });
+    }
+    return message;
+  }
+
+  async function reconnectDrive() {
+    if (!canReconnect || uploading || syncing) return;
+    setSyncFeedback({ type: "working", text: "Abrindo a autorização do Google Drive…" });
+    try {
+      const result = await authenticatedJson<{ url: string }>("/api/google-drive/authorize", {
+        method: "POST",
+        body: "{}",
+      });
+      window.location.assign(result.url);
+    } catch (error) {
+      const message = registerDriveFailure(error);
+      setSyncFeedback({ type: "error", text: message });
+      onError(message);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -247,7 +299,7 @@ export function OrderDriveUpload({ orderId, opNumber, canOperate, onUploaded, on
       await onUploaded();
       onNotice(`${completed} arquivo(s) enviado(s) ao Google Drive e vinculado(s) à OP ${opNumber}.`);
     } catch (error) {
-      onError(error instanceof Error ? error.message : "Não foi possível enviar os arquivos.");
+      onError(registerDriveFailure(error));
     } finally {
       setUploading(false);
       setCurrentFile("");
@@ -305,7 +357,7 @@ export function OrderDriveUpload({ orderId, opNumber, canOperate, onUploaded, on
       setSyncFeedback({ type: "success", text: message });
       onNotice(message);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Não foi possível sincronizar os arquivos do Drive.";
+      const message = registerDriveFailure(error);
       const permissionHint = /insufficient|permission|scope|permiss|forbidden|403/i.test(message)
         ? `${message} Reconecte a conta em Configurações para renovar a permissão do Google Drive.`
         : message;
@@ -317,7 +369,14 @@ export function OrderDriveUpload({ orderId, opNumber, canOperate, onUploaded, on
   }
 
   if (statusLoading) return <div className="drive-upload-status loading">Verificando conexão com o Google Drive…</div>;
-  if (!status?.enabled || !status.connected) return <div className="drive-upload-status disconnected"><b>Upload automático indisponível</b><span>O administrador precisa salvar as credenciais e conectar a conta Google em Configurações. O vínculo manual por link continua disponível abaixo.</span></div>;
+  if (!status?.enabled || !status.connected) return <div className="drive-upload-status disconnected">
+    <b>Google Drive desconectado</b>
+    <span>A autorização expirou, foi revogada ou ainda não foi concluída. Os arquivos existentes permanecem preservados.</span>
+    {canReconnect
+      ? <button type="button" className="primary" onClick={() => void reconnectDrive()} disabled={uploading || syncing}>Reconectar Google Drive</button>
+      : <small>Solicite ao administrador que reconecte a conta em Configurações → Integração com Google Drive.</small>}
+    {syncFeedback && <div className={`drive-sync-feedback ${syncFeedback.type}`} role="status" aria-live="polite">{syncFeedback.text}</div>}
+  </div>;
 
   return <form className="drive-upload-form" onSubmit={submit}>
     <div className="drive-upload-connection">

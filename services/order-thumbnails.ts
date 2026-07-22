@@ -5,8 +5,8 @@ import type { Order } from "@/lib/pcp-types";
 type ThumbnailOrder = Pick<Order, "id" | "main_image_path">;
 export type ThumbnailRequestPriority = "foreground" | "background";
 
-const THUMBNAIL_CACHE_PREFIX = "publicolor-order-thumbnails-v2";
-const LEGACY_CACHE = "publicolor-order-thumbnails-v1";
+const THUMBNAIL_CACHE_PREFIX = "publicolor-order-thumbnails-v3-png";
+const LEGACY_CACHES = ["publicolor-order-thumbnails-v1", "publicolor-order-thumbnails-v2"];
 const MAX_CONCURRENT_REQUESTS = 4;
 const MAX_BACKGROUND_REQUESTS = 2;
 
@@ -52,7 +52,7 @@ function openUserCache(userId: string) {
 async function cleanupLegacyCache() {
   if (legacyCacheCleanupStarted || !("caches" in window)) return;
   legacyCacheCleanupStarted = true;
-  await window.caches.delete(LEGACY_CACHE).catch(() => false);
+  await Promise.all(LEGACY_CACHES.map((name) => window.caches.delete(name).catch(() => false)));
 }
 
 function pumpRequestQueue() {
@@ -163,8 +163,110 @@ export async function clearOrderThumbnailCaches(userId?: string) {
   const names = await window.caches.keys();
   const expected = userId ? cacheName(userId) : null;
   const targets = names.filter((name) =>
-    name === LEGACY_CACHE || (expected ? name === expected : name.startsWith(THUMBNAIL_CACHE_PREFIX)),
+    LEGACY_CACHES.includes(name) || (expected ? name === expected : name.startsWith(THUMBNAIL_CACHE_PREFIX)),
   );
   targets.forEach((name) => cachePromises.delete(name));
   await Promise.all(targets.map((name) => window.caches.delete(name)));
+}
+
+export type OrderThumbnailGalleryPage = {
+  key: string;
+  fileName: string;
+  pageNumber: number;
+  isMain: boolean;
+  src: string;
+  ownedObjectUrl: boolean;
+};
+
+type GalleryMetadataResponse = {
+  pages?: Array<{
+    key: string;
+    file_name: string;
+    page_number: number;
+    is_main: boolean;
+    preview_url: string | null;
+  }>;
+};
+
+async function authenticatedImageObjectUrl(url: string, accessToken: string) {
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(payload.error || `Página complementar indisponível (${response.status}).`);
+  }
+  const blob = await response.blob();
+  if (!blob.size) throw new Error("O arquivo complementar está vazio.");
+  return URL.createObjectURL(blob);
+}
+
+export async function fetchOrderThumbnailGallery(
+  order: ThumbnailOrder,
+  initialUrl: string,
+  accessToken: string,
+): Promise<OrderThumbnailGalleryPage[]> {
+  const response = await fetch(`/api/order-thumbnails/${encodeURIComponent(order.id)}/pages`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  const payload = await response.json().catch(() => ({})) as GalleryMetadataResponse & { error?: string };
+  if (!response.ok) throw new Error(payload.error || "Não foi possível localizar as páginas da miniatura.");
+
+  const metadata = payload.pages || [];
+  if (!metadata.length) {
+    return [{
+      key: "main",
+      fileName: "Miniatura principal.png",
+      pageNumber: 1,
+      isMain: true,
+      src: initialUrl,
+      ownedObjectUrl: false,
+    }];
+  }
+
+  const pages: OrderThumbnailGalleryPage[] = [];
+  for (const page of metadata) {
+    if (page.is_main) {
+      pages.push({
+        key: page.key,
+        fileName: page.file_name,
+        pageNumber: page.page_number,
+        isMain: true,
+        src: initialUrl,
+        ownedObjectUrl: false,
+      });
+      continue;
+    }
+    if (!page.preview_url) continue;
+    try {
+      const src = await authenticatedImageObjectUrl(page.preview_url, accessToken);
+      pages.push({
+        key: page.key,
+        fileName: page.file_name,
+        pageNumber: page.page_number,
+        isMain: false,
+        src,
+        ownedObjectUrl: true,
+      });
+    } catch {
+      // Uma página com falha não bloqueia a visualização das demais.
+    }
+  }
+
+  return pages.length ? pages : [{
+    key: "main",
+    fileName: "Miniatura principal.png",
+    pageNumber: 1,
+    isMain: true,
+    src: initialUrl,
+    ownedObjectUrl: false,
+  }];
+}
+
+export function releaseOrderThumbnailGallery(pages: OrderThumbnailGalleryPage[]) {
+  for (const page of pages) {
+    if (page.ownedObjectUrl && page.src.startsWith("blob:")) URL.revokeObjectURL(page.src);
+  }
 }

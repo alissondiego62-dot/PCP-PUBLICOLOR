@@ -41,6 +41,17 @@ export type DriveFile = {
   resolvedCategory?: string;
 };
 
+export class DriveReconnectRequiredError extends Error {
+  status = 401;
+  code = "GOOGLE_DRIVE_RECONNECT_REQUIRED";
+  reconnectRequired = true;
+
+  constructor(message = "A autorização do Google Drive expirou ou foi revogada. Reconecte a conta em Configurações → Integração com Google Drive.") {
+    super(message);
+    this.name = "DriveReconnectRequiredError";
+  }
+}
+
 const DRIVE_FOLDER_MIME = "application/vnd.google-apps.folder";
 const DRIVE_SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
 
@@ -137,14 +148,22 @@ export async function saveDriveSettings(input: {
 
 export async function storeDriveTokens(input: {
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
   expiresIn: number;
   connectedEmail: string;
   userId: string;
 }) {
+  const current = await getDriveSettings();
+  const refreshToken = input.refreshToken?.trim() || "";
+  if (!refreshToken && !current.refresh_token_ciphertext) {
+    throw new DriveReconnectRequiredError(
+      "O Google não forneceu um token de renovação. Reconecte a conta e confirme novamente todas as permissões solicitadas.",
+    );
+  }
+
   return updateSettings({
     access_token_ciphertext: encryptDriveSecret(input.accessToken),
-    refresh_token_ciphertext: encryptDriveSecret(input.refreshToken),
+    ...(refreshToken ? { refresh_token_ciphertext: encryptDriveSecret(refreshToken) } : {}),
     token_expires_at: new Date(Date.now() + Math.max(60, input.expiresIn - 30) * 1000).toISOString(),
     connected_email: input.connectedEmail.toLowerCase(),
     enabled: true,
@@ -163,6 +182,20 @@ export async function clearDriveTokens(userId: string) {
   });
 }
 
+async function markDriveReconnectRequired() {
+  return updateSettings({
+    access_token_ciphertext: null,
+    refresh_token_ciphertext: null,
+    token_expires_at: null,
+    connected_email: null,
+  });
+}
+
+function revokedOrExpiredGoogleToken(error: string, description: string) {
+  return error === "invalid_grant"
+    || /expired|revoked|invalid grant|token has been expired|token has been revoked/i.test(`${error} ${description}`);
+}
+
 export function driveCredentials(settings: DriveSettingsRow) {
   const clientSecret = decryptDriveSecret(settings.oauth_client_secret_ciphertext);
   if (!settings.oauth_client_id || !clientSecret) {
@@ -174,14 +207,19 @@ export function driveCredentials(settings: DriveSettingsRow) {
 const FULL_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const READONLY_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 
-async function assertCompleteDriveAccess() {
-  const { accessToken } = await validDriveAccessToken();
+async function assertCompleteDriveAccess(retry = true) {
+  const { accessToken } = await validDriveAccessToken(!retry);
   const response = await fetch(
     `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
     { cache: "no-store" },
   );
   const payload = await response.json().catch(() => ({})) as { scope?: string; error_description?: string };
   if (!response.ok) {
+    if (retry) return assertCompleteDriveAccess(false);
+    if (revokedOrExpiredGoogleToken("", payload.error_description || "")) {
+      await markDriveReconnectRequired();
+      throw new DriveReconnectRequiredError();
+    }
     throw new Error(payload.error_description || "Não foi possível validar as permissões atuais do Google Drive.");
   }
 
@@ -205,7 +243,7 @@ export async function validDriveAccessToken(forceRefresh = false) {
   }
 
   const refreshToken = decryptDriveSecret(settings.refresh_token_ciphertext);
-  if (!refreshToken) throw new Error("O Google Drive ainda não está conectado. Acesse Configurações e autorize a conta.");
+  if (!refreshToken) throw new DriveReconnectRequiredError("O Google Drive não está conectado. Reconecte a conta nas Configurações.");
   const { clientId, clientSecret } = driveCredentials(settings);
 
   const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -218,9 +256,18 @@ export async function validDriveAccessToken(forceRefresh = false) {
       grant_type: "refresh_token",
     }),
   });
-  const payload = await response.json() as { access_token?: string; expires_in?: number; error_description?: string };
+  const payload = await response.json().catch(() => ({})) as {
+    access_token?: string;
+    expires_in?: number;
+    error?: string;
+    error_description?: string;
+  };
   if (!response.ok || !payload.access_token) {
-    throw new Error(payload.error_description || "A autorização do Google Drive expirou. Reconecte a conta nas Configurações.");
+    if (revokedOrExpiredGoogleToken(payload.error || "", payload.error_description || "")) {
+      await markDriveReconnectRequired();
+      throw new DriveReconnectRequiredError();
+    }
+    throw new Error(payload.error_description || "Não foi possível renovar a autorização do Google Drive.");
   }
 
   const refreshed = await updateSettings({
@@ -259,11 +306,23 @@ async function driveFetch<T>(path: string, init: RequestInit = {}, retry = true)
 
 async function driveApiError(response: Response) {
   let detail = "";
+  let googleCode = "";
   try {
-    const payload = await response.json() as { error?: { message?: string } };
-    detail = payload.error?.message || "";
+    const payload = await response.json() as { error?: { message?: string; status?: string; code?: number } | string };
+    if (typeof payload.error === "string") {
+      detail = payload.error;
+      googleCode = payload.error;
+    } else {
+      detail = payload.error?.message || "";
+      googleCode = payload.error?.status || String(payload.error?.code || "");
+    }
   } catch {
     detail = await response.text().catch(() => "");
+  }
+
+  if (response.status === 401 || revokedOrExpiredGoogleToken(googleCode, detail)) {
+    await markDriveReconnectRequired();
+    return new DriveReconnectRequiredError();
   }
   return new Error(detail || `Google Drive respondeu com erro ${response.status}.`);
 }

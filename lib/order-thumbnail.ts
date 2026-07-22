@@ -61,6 +61,29 @@ export function isPdfImportedPageThumbnail(file: ThumbnailFileCandidate) {
   return importerNote || (category === "document" && importedPageName);
 }
 
+/** Identifica páginas adicionais vinculadas ao mesmo pedido pelo importador de PDF. */
+export function isPdfComplementPage(file: ThumbnailFileCandidate) {
+  if (!file.drive_file_id?.trim() || !isPngThumbnailCandidate(file)) return false;
+
+  const fileName = normalizeThumbnailText(file.file_name);
+  const notes = normalizeThumbnailText(file.notes);
+  const complementNote = notes.includes("complement")
+    || notes.includes("continuação")
+    || notes.includes("continuacao");
+  const importedPageName = /(?:^|[-_ ])pagina[-_ ]?\d+\.png$/.test(fileName);
+
+  return complementNote && importedPageName;
+}
+
+export function thumbnailPageNumber(file: ThumbnailFileCandidate) {
+  const fileName = normalizeThumbnailText(file.file_name);
+  const notes = normalizeThumbnailText(file.notes);
+  const fromName = fileName.match(/(?:^|[-_ ])pagina[-_ ]?(\d+)\.png$/)?.[1];
+  const fromNotes = notes.match(/pagina\s+(\d+)(?:\s*\/\s*\d+)?/)?.[1];
+  const value = Number(fromName || fromNotes || 0);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 
 /** Identifica miniaturas enviadas pelo importador em lote de ZIP. */
 export function isZipImportedThumbnail(file: ThumbnailFileCandidate) {
