@@ -1,0 +1,7 @@
+PUBLICOLOR PCP 3.5.4 - RELATÓRIO DE VALIDAÇÃO
+
+- Miniaturas configuradas para exibir a imagem completa sem recorte.
+- Impressão disponível em cartões, pilhas e visualização ampliada.
+- Impressão multipágina prepara todas as imagens antes de abrir o diálogo do navegador.
+- Cada imagem é impressa em uma folha separada com ajuste proporcional.
+- Sem alteração de banco de dados.

@@ -1,7 +1,14 @@
-# Publicolor PCP 3.5.3
+# Publicolor PCP 3.5.4
 
 Sistema operacional de PCP da Publicolor para pedidos, produção, agenda, compras, clientes, usuários e integrações.
 
+
+
+## Alterações da versão 3.5.4
+
+- Miniaturas completas, sem corte, em todos os cartões do Kanban.
+- Botão para imprimir a imagem principal e todas as páginas complementares.
+- Impressão de pilhas reúne as imagens de todos os subpedidos selecionados.
 
 ## Correções da versão 3.5.3
 

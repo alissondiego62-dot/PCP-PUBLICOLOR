@@ -1,0 +1,102 @@
+/* Publicolor PCP 3.5.4 · miniaturas sem corte e impressão multipágina */
+
+/* Exibe a imagem completa nos cartões, inclusive páginas importadas de PDF. */
+.order-thumbnail img,
+.order.pdf-page-order .order-thumbnail.pdf-page-thumbnail img,
+.sector.compact-mode .order-thumbnail img,
+.v3-order-image img,
+.v3-order-image.pdf-page-thumbnail img{
+  object-fit:contain!important;
+  object-position:center!important;
+  background:#fff!important;
+}
+
+.order-thumbnail,
+.order.pdf-page-order .order-thumbnail.pdf-page-thumbnail,
+.v3-order-image{
+  background:#fff!important;
+}
+
+/* Mantém uma borda visual discreta quando a imagem possui proporção diferente. */
+.order-thumbnail img{
+  padding:3px;
+}
+
+.order.pdf-page-order .order-thumbnail.pdf-page-thumbnail img{
+  padding:6px!important;
+}
+
+/* Ação de impressão no cartão e nas pilhas. */
+.kanban-card-icon-actions .print-order-icon,
+.kanban-stack-icon-actions .print-order-icon{
+  color:#5f1d70!important;
+  background:#f7eef9!important;
+}
+
+.kanban-card-icon-actions .print-order-icon:hover,
+.kanban-stack-icon-actions .print-order-icon:hover{
+  background:#ead8ef!important;
+}
+
+/* Botão de impressão na visualização ampliada. */
+.image-preview-toolbar-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex:0 0 auto;
+}
+
+.image-preview-print{
+  min-height:38px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  padding:0 13px;
+  border:1px solid rgba(255,255,255,.24);
+  border-radius:9px;
+  background:rgba(255,255,255,.1);
+  color:#fff;
+  font-size:9px;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.image-preview-print:hover{
+  border-color:#ffd000;
+  background:#ffd000;
+  color:#3b153f;
+}
+
+.image-preview-print:disabled{
+  opacity:.58;
+  cursor:wait;
+}
+
+.image-preview-print span{
+  color:inherit!important;
+  font-size:inherit!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+  white-space:nowrap!important;
+}
+
+@media(max-width:700px){
+  .image-preview-toolbar{
+    align-items:flex-start;
+  }
+
+  .image-preview-toolbar-actions{
+    gap:5px;
+  }
+
+  .image-preview-print{
+    width:38px;
+    min-width:38px;
+    padding:0;
+  }
+
+  .image-preview-print span{
+    display:none;
+  }
+}

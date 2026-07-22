@@ -108,6 +108,74 @@ function isPdfPageThumbnailPath(path: string | null | undefined) {
   return Boolean(path?.includes("/pdf-pages/") || driveThumbnailFileId(path));
 }
 
+
+type PrintableOrderGallery = {
+  order: Order;
+  pages: OrderThumbnailGalleryPage[];
+};
+
+function escapePrintHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function printLoadingDocument(printWindow: Window) {
+  printWindow.document.open();
+  printWindow.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Preparando impressão</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f3f8;color:#4f1b5d;font-family:Arial,sans-serif}main{padding:28px;text-align:center}b{display:block;margin-bottom:8px;font-size:18px}span{font-size:13px;color:#79687e}</style></head><body><main><b>Preparando as imagens para impressão…</b><span>Aguarde enquanto todas as páginas da ordem são carregadas.</span></main></body></html>`);
+  printWindow.document.close();
+}
+
+function printGalleryDocument(printWindow: Window, galleries: PrintableOrderGallery[]) {
+  const sections = galleries.flatMap(({ order, pages }) => pages.map((page, index) => `
+    <section class="print-page">
+      <header><b>OP ${escapePrintHtml(order.op_number)}</b><span>${escapePrintHtml(order.client_name)} · ${escapePrintHtml(page.fileName || `Página ${index + 1}`)}</span></header>
+      <div class="image-frame"><img src="${escapePrintHtml(page.src)}" alt="OP ${escapePrintHtml(order.op_number)}, página ${index + 1}"></div>
+      <footer>Página ${index + 1} de ${pages.length}</footer>
+    </section>`)).join("");
+
+  printWindow.document.open();
+  printWindow.document.write(`<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Impressão de miniaturas Publicolor</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:#1f1722;font-family:Arial,Helvetica,sans-serif}
+  .print-page{min-height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:5mm;padding:7mm;break-after:page;page-break-after:always}
+  .print-page:last-child{break-after:auto;page-break-after:auto}
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;border-bottom:1px solid #d9cddd;padding-bottom:3mm}
+  header b{font-size:14pt;color:#5f1d70}
+  header span{max-width:72%;font-size:8pt;text-align:right;color:#655a68;overflow-wrap:anywhere}
+  .image-frame{min-height:0;display:grid;place-items:center;overflow:hidden}
+  img{display:block;max-width:100%;max-height:250mm;width:auto;height:auto;object-fit:contain;object-position:center}
+  footer{text-align:center;font-size:7pt;color:#776d79}
+  @page{size:auto;margin:0}
+  @media screen{body{background:#eee}.print-page{width:min(210mm,100%);min-height:297mm;margin:12px auto;background:#fff;box-shadow:0 4px 24px #0002}}
+  @media print{.print-page{height:100vh;min-height:0}}
+</style>
+</head>
+<body>${sections}
+<script>
+  const images = Array.from(document.images);
+  const ready = images.map((image) => image.complete
+    ? Promise.resolve()
+    : new Promise((resolve) => {
+        image.addEventListener('load', resolve, { once: true });
+        image.addEventListener('error', resolve, { once: true });
+      }));
+  Promise.all(ready).then(() => window.setTimeout(() => { window.focus(); window.print(); }, 250));
+  window.addEventListener('afterprint', () => window.close(), { once: true });
+</script>
+</body>
+</html>`);
+  printWindow.document.close();
+}
+
 function normalizedResponsibleName(value: string | null | undefined) {
   return value?.trim().toLocaleUpperCase("pt-BR") || "";
 }
@@ -285,6 +353,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     error: string | null;
   } | null>(null);
   const [imagePreviewZoom, setImagePreviewZoom] = useState(1);
+  const [printingImages, setPrintingImages] = useState(false);
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [reopenOrderTarget, setReopenOrderTarget] = useState<Order | null>(null);
@@ -388,6 +457,98 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
     });
     setImagePreviewZoom(1);
   }, []);
+
+  const printOrderImages = useCallback(async (selectedOrders: Order[]) => {
+    if (printingImages) return;
+    const printableOrders = selectedOrders.filter((order) => Boolean(order.main_image_path?.trim()));
+    if (!printableOrders.length) {
+      showNotice("Nenhuma imagem disponível para impressão.");
+      return;
+    }
+
+    const printWindow = window.open("", "_blank", "width=1100,height=850");
+    if (!printWindow) {
+      setError("O navegador bloqueou a janela de impressão. Libere pop-ups para este sistema e tente novamente.");
+      return;
+    }
+
+    printWindow.opener = null;
+    printLoadingDocument(printWindow);
+    setPrintingImages(true);
+    setError("");
+
+    const temporaryMainUrls = new Set<string>();
+    const temporaryGalleryPages: OrderThumbnailGalleryPage[] = [];
+
+    try {
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token;
+      if (sessionError || !accessToken) throw new Error("Sessão expirada. Entre novamente no sistema.");
+
+      const galleries: PrintableOrderGallery[] = [];
+      for (const order of printableOrders) {
+        if (printWindow.closed) throw new Error("A janela de impressão foi fechada antes da conclusão.");
+
+        let initialUrl = imageUrlsRef.current[order.id] || "";
+        if (!initialUrl) {
+          const response = await fetch(`/api/order-thumbnails/${encodeURIComponent(order.id)}?print=1`, {
+            headers: { authorization: `Bearer ${accessToken}` },
+            cache: "no-store",
+          });
+          if (response.ok) {
+            const blob = await response.blob();
+            if (blob.size) {
+              initialUrl = URL.createObjectURL(blob);
+              temporaryMainUrls.add(initialUrl);
+            }
+          }
+        }
+        if (!initialUrl) continue;
+
+        try {
+          const pages = await fetchOrderThumbnailGallery(order, initialUrl, accessToken);
+          temporaryGalleryPages.push(...pages.filter((page) => page.ownedObjectUrl));
+          galleries.push({ order, pages });
+        } catch {
+          galleries.push({
+            order,
+            pages: [{
+              key: `main-${order.id}`,
+              fileName: `OP ${order.op_number}.png`,
+              pageNumber: 1,
+              isMain: true,
+              src: initialUrl,
+              ownedObjectUrl: false,
+            }],
+          });
+        }
+      }
+
+      if (!galleries.length) throw new Error("Não foi possível carregar nenhuma imagem para impressão.");
+      printGalleryDocument(printWindow, galleries);
+
+      const cleanup = () => {
+        temporaryMainUrls.forEach((url) => URL.revokeObjectURL(url));
+        releaseOrderThumbnailGallery(temporaryGalleryPages);
+      };
+      const poll = window.setInterval(() => {
+        if (!printWindow.closed) return;
+        window.clearInterval(poll);
+        cleanup();
+      }, 750);
+      window.setTimeout(() => {
+        window.clearInterval(poll);
+        cleanup();
+      }, 5 * 60_000);
+    } catch (printError) {
+      if (!printWindow.closed) printWindow.close();
+      temporaryMainUrls.forEach((url) => URL.revokeObjectURL(url));
+      releaseOrderThumbnailGallery(temporaryGalleryPages);
+      setError(printError instanceof Error ? printError.message : "Não foi possível preparar a impressão das imagens.");
+    } finally {
+      setPrintingImages(false);
+    }
+  }, [printingImages]);
 
   const openOrderImagePreview = useCallback(async (order: Order, initialUrl: string) => {
     if (!initialUrl) return;
@@ -3177,6 +3338,8 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
         onMoveOrder={setMoveOrderTarget}
         onChangeStatus={setStatusOrderTarget}
         onFinishOrder={(order) => void finishOrder(order)}
+        onPrintOrders={(selectedOrders) => { void printOrderImages(selectedOrders); }}
+        printingImages={printingImages}
         onBulkMoveOrders={moveStackOrders}
         onBulkChangeStatus={changeStackOrdersStatus}
         onBulkFinishOrders={finishStackOrders}
@@ -3516,7 +3679,20 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
             <b>{imagePreview.alt}</b>
             <span>{imagePreview.pages[imagePreview.index]?.fileName || "Miniatura principal.png"}</span>
           </div>
-          <button type="button" className="image-preview-close" aria-label="Fechar imagem ampliada" title="Fechar" onClick={closeImagePreview}>×</button>
+          <div className="image-preview-toolbar-actions">
+            <button
+              type="button"
+              className="image-preview-print"
+              disabled={printingImages}
+              aria-label={`Imprimir todas as ${imagePreview.pages.length} imagens da ordem`}
+              title="Imprimir todas as imagens"
+              onClick={() => {
+                const order = orders.find((item) => item.id === imagePreview.orderId);
+                if (order) void printOrderImages([order]);
+              }}
+            ><AppIcon name="print" /> <span>{printingImages ? "Preparando…" : imagePreview.pages.length > 1 ? `Imprimir todas (${imagePreview.pages.length})` : "Imprimir"}</span></button>
+            <button type="button" className="image-preview-close" aria-label="Fechar imagem ampliada" title="Fechar" onClick={closeImagePreview}>×</button>
+          </div>
         </header>
         <div
           className="image-preview-stage"
