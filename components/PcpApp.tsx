@@ -148,8 +148,8 @@ function printGalleryDocument(printWindow: Window, galleries: PrintableOrderGall
   html,body{margin:0;padding:0;background:#fff;color:#1f1722;font-family:Arial,Helvetica,sans-serif}
   body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .print-page{
-    width:198mm;
-    height:285mm;
+    width:285mm;
+    height:198mm;
     margin:0 auto;
     display:grid;
     grid-template-rows:10mm minmax(0,1fr) 5mm;
@@ -190,14 +190,14 @@ function printGalleryDocument(printWindow: Window, galleries: PrintableOrderGall
     object-position:center;
   }
   footer{display:flex;align-items:center;justify-content:center;overflow:hidden;text-align:center;font-size:7pt;color:#776d79}
-  @page{size:A4 portrait;margin:6mm}
+  @page{size:A4 landscape;margin:6mm}
   @media screen{
     body{padding:12px;background:#eee}
-    .print-page{width:min(198mm,100%);height:min(285mm,calc(100vh - 24px));min-height:640px;margin:0 auto 12px;background:#fff;box-shadow:0 4px 24px #0002}
+    .print-page{width:min(285mm,100%);height:min(198mm,calc(100vh - 24px));min-height:520px;margin:0 auto 12px;background:#fff;box-shadow:0 4px 24px #0002}
   }
   @media print{
-    html,body{width:198mm}
-    .print-page{width:198mm;height:285mm}
+    html,body{width:285mm}
+    .print-page{width:285mm;height:198mm}
   }
 </style>
 </head>
@@ -459,6 +459,7 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
   const thumbnailBackgroundGenerationRef = useRef(0);
   const imagePreviewRequestRef = useRef(0);
   const imagePreviewTouchStartRef = useRef<number | null>(null);
+  const imagePreviewWheelLockRef = useRef(0);
   const imagePreviewOwnedPagesRef = useRef<OrderThumbnailGalleryPage[]>([]);
   const accessLogIdRef = useRef<string | null>(null);
   const [boardScrollWidth, setBoardScrollWidth] = useState(0);
@@ -3762,9 +3763,29 @@ export function PcpApp({ initialView = "dashboard" }: { initialView?: ViewKey })
             if (start === null || end === undefined || Math.abs(end - start) < 48) return;
             navigateImagePreview(end > start ? -1 : 1);
           }}
+          onWheel={(event) => {
+            if (imagePreview.pages.length <= 1) return;
+            const now = Date.now();
+            if (now - imagePreviewWheelLockRef.current < 220) return;
+            const horizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
+            const delta = horizontal ? event.deltaX : event.deltaY;
+            if (Math.abs(delta) < 24) return;
+            imagePreviewWheelLockRef.current = now;
+            navigateImagePreview(delta > 0 ? 1 : -1);
+          }}
         >
           {imagePreview.pages.length > 1 && <button type="button" className="image-preview-page-nav previous" aria-label="Ver página anterior" onClick={() => navigateImagePreview(-1)}>‹</button>}
-          <div className="image-preview-canvas" style={{ width: `${imagePreviewZoom * 100}%`, height: `${imagePreviewZoom * 100}%` }}>
+          <div
+            className="image-preview-canvas"
+            style={{ width: `${imagePreviewZoom * 100}%`, aspectRatio: "297 / 210" }}
+            onClick={(event) => {
+              if (imagePreview.pages.length <= 1) return;
+              const bounds = event.currentTarget.getBoundingClientRect();
+              const clickX = event.clientX - bounds.left;
+              navigateImagePreview(clickX < bounds.width / 2 ? -1 : 1);
+            }}
+            title={imagePreview.pages.length > 1 ? "Clique no lado esquerdo ou direito para navegar" : undefined}
+          >
             <img src={imagePreview.pages[imagePreview.index]?.src || ""} alt={`${imagePreview.alt}, página ${imagePreview.index + 1}`} />
           </div>
           {imagePreview.pages.length > 1 && <button type="button" className="image-preview-page-nav next" aria-label="Ver próxima página" onClick={() => navigateImagePreview(1)}>›</button>}
