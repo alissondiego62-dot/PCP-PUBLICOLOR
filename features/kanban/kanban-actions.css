@@ -1,0 +1,49 @@
+.workflow-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.workflow-actions .move-order-button,
+.workflow-actions .finish-order {
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 800;
+}
+.move-order-button {
+  border: 1px solid #d7c3df;
+  background: #f7f1f9;
+  color: #5b1d73;
+}
+.move-order-modal {
+  width: min(520px, calc(100vw - 28px));
+  display: grid;
+  gap: 14px;
+}
+.move-order-modal > label {
+  display: grid;
+  gap: 6px;
+  color: #514757;
+  font-size: 11px;
+  font-weight: 800;
+}
+.move-order-modal select { width: 100%; min-height: 44px; }
+.move-order-modal .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+
+@media (min-width: 1101px) {
+  .move-order-button { display: none; }
+  .workflow-actions { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  .workflow-actions { position: sticky; bottom: 0; z-index: 2; padding-top: 4px; background: linear-gradient(transparent, #fff 35%); }
+  .workflow-actions .move-order-button,
+  .workflow-actions .finish-order { min-height: 42px; font-size: 11px; }
+  .move-order-modal { width: 100%; border-radius: 16px 16px 0 0; }
+  .move-order-modal .modal-actions { grid-template-columns: 1fr; }
+}
+/* Publicolor 3.4 — densidade, WIP e envelhecimento operacional */
+.kanban-display-toggle{display:flex;gap:2px;padding:3px;border:1px solid var(--pcp-border);border-radius:9px;background:#f7f5f8}.kanban-display-toggle button{min-height:29px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--pcp-muted);font-size:9px;font-weight:800;cursor:pointer}.kanban-display-toggle button.active{background:#fff;color:var(--pcp-brand-800);box-shadow:0 2px 8px rgba(45,16,55,.08)}.kanban-sector-select{grid-column:1/-1;width:100%;min-height:36px;border:1px solid var(--pcp-border);border-radius:9px;background:#fff;padding:0 10px;color:var(--pcp-text);font-size:11px}.sector.over-wip>.sector-head{border-color:#efc0bb;background:#fff5f3}.sector.over-wip>.sector-head>span{background:var(--pcp-danger-bg);color:var(--pcp-danger)}.order-operational-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:7px 0 0;font-size:8px;color:var(--pcp-muted)}.order-operational-meta b{padding:3px 6px;border-radius:999px;background:var(--pcp-warning-bg);color:var(--pcp-warning);font-size:7px}.sector.compact-mode .order-thumbnail{height:86px}.sector.compact-mode .order-thumbnail img{height:86px;object-fit:cover}.sector.compact-mode .order-service,.sector.compact-mode .order-responsible,.sector.compact-mode .card-actions{display:none}.sector.compact-mode .order{padding-bottom:10px}.sector.compact-mode .order-deadlines{margin-top:6px}.sector.compact-mode .workflow-actions{grid-template-columns:1fr}.sector.compact-mode .finish-order{display:none}
+@media(max-width:768px){.kanban-display-toggle{order:5}.kanban-display-toggle button{min-height:34px}.sector.compact-mode .order-thumbnail{height:72px}.sector.compact-mode .order-thumbnail img{height:72px}}

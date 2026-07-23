@@ -1,0 +1,15 @@
+VALIDAÇÃO ESTÁTICA — PUBLICOLOR PCP 3.1.2
+
+Itens verificados:
+- sintaxe TypeScript/TSX dos arquivos alterados;
+- resolução dos imports internos;
+- estrutura dos arquivos JSON;
+- fechamento estrutural dos CSS;
+- prioridade foreground/background das miniaturas;
+- limite de duas requisições de miniatura em segundo plano;
+- filtros rápidos dos indicadores;
+- responsividade dos indicadores em desktop, tablet e celular;
+- integridade do ZIP final.
+
+Limitação do ambiente:
+- pnpm install e pnpm validate não foram executados porque o ambiente não conseguiu resolver registry.npmjs.org.

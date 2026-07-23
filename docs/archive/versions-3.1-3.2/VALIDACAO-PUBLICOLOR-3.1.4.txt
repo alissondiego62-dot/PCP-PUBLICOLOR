@@ -1,0 +1,30 @@
+PUBLICOLOR PCP 3.1.4 — RELATÓRIO DE VALIDAÇÃO
+
+ESCOPO
+- Subatividades recolhíveis na aba Atividades.
+- Confirmação de propagação de status para todas as subatividades.
+- Compra consolidada por OP.
+- Botão para copiar produtos e quantidades.
+- Quantidade, unidade, preço unitário, subtotal e total da compra.
+- Histórico de alterações dos materiais.
+- SQL cumulativo compatível com banco ainda na versão 3.1.2.
+
+VALIDAÇÕES EXECUTADAS
+- 76 arquivos TypeScript/TSX/MTS transpilados: zero erros de sintaxe.
+- Verificação semântica direcionada do ActivitiesView: aprovada.
+- Imports internos: zero caminhos ausentes.
+- JSON: todos os arquivos válidos.
+- CSS: 20 arquivos com chaves estruturais balanceadas.
+- Service Worker e scripts MJS: sintaxe aprovada pelo Node.js.
+- SQL: blocos transacionais, delimitadores PL/pgSQL e recursos obrigatórios verificados.
+- Migração incremental e SQL cumulativo incluídos.
+- Arquivos .env.local, .git, node_modules, dist e .next não incluídos.
+
+COMPATIBILIDADE DO BANCO
+Uma consulta somente leitura confirmou que o banco conectado ainda não possuía as colunas da versão 3.1.3. Por isso, o arquivo SQL-ATUALIZACAO-PUBLICOLOR-3.1.4.sql foi preparado de forma cumulativa e instala as etapas 3.1.3 e 3.1.4 em sequência.
+
+LIMITAÇÃO DE VALIDAÇÃO
+O build integral com pnpm validate não foi executado neste ambiente porque registry.npmjs.org não pôde ser resolvido por DNS. Execute pnpm validate no ambiente local ou na integração da Vercel antes de publicar em produção.
+
+BANCO DE PRODUÇÃO
+Nenhuma alteração foi aplicada diretamente. Foram realizadas somente consultas de estrutura em modo leitura.
