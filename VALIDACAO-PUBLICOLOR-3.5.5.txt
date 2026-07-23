@@ -1,8 +1,0 @@
-PUBLICOLOR PCP 3.5.5 - RELATÓRIO DE VALIDAÇÃO
-
-- Visualização ampliada enquadrada integralmente com object-fit contain.
-- Zoom mínimo de 100% para preservar o enquadramento inicial.
-- Impressão A4 com área física controlada e sem ultrapassar a folha.
-- Cada imagem permanece proporcional e centralizada.
-- Impressão multipágina preservada: uma imagem por folha.
-- Sem alteração de banco de dados.
