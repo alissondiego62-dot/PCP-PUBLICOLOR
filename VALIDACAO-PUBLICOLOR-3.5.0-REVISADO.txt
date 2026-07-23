@@ -1,0 +1,28 @@
+PUBLICOLOR PCP 3.5.0 REVISADO — RELATÓRIO DE VALIDAÇÃO ESTÁTICA
+
+BASE
+- Reconstruído a partir do pacote 3.4.6.
+- Alterações do primeiro pacote 3.5.0 não foram usadas como base automática.
+
+VERIFICAÇÕES CONCLUÍDAS
+- 105 arquivos TypeScript/TSX passaram pela transpilação sintática.
+- 271 referências de imports internos foram verificadas sem caminhos ausentes.
+- Arquivos JSON foram analisados.
+- Estrutura de chaves dos arquivos CSS foi verificada.
+- SQL incremental e migration do repositório são idênticos.
+- SQL cumulativo termina com o mesmo bloco da migration incremental.
+- Rota administrativa de setores exige permissão settings.operation.
+- Entrada em Instalação é protegida na interface e por trigger no banco.
+- Agendamento de pedido ou pilha usa uma única função transacional.
+- Nenhuma alteração foi aplicada diretamente ao banco de produção.
+
+LIMITAÇÕES DO AMBIENTE
+- O build completo não foi executado porque o pacote não possui node_modules no ambiente de geração.
+- O typecheck completo requer pnpm install com Node.js 24.x.
+- A consulta de inspeção ao projeto Supabase conectado expirou por timeout; por isso a validação do estado real deve ser concluída com o SQL-VALIDAR após a migração.
+
+VALIDAÇÃO OBRIGATÓRIA ANTES DO DEPLOY
+- pnpm install --frozen-lockfile
+- pnpm validate
+- executar SQL-VALIDAR-PUBLICOLOR-3.5.0-REVISADO.sql em homologação
+- testar o fluxo Produção concluída -> Agenda -> Instalação

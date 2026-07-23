@@ -1,0 +1,48 @@
+{
+  "name": "controle-pedidos-kanban",
+  "version": "3.5.6",
+  "private": true,
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "vinext dev",
+    "build": "vite build",
+    "start": "vinext start",
+    "test": "vinext build && node --test tests/rendered-html.test.mjs",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm typecheck && pnpm lint",
+    "validate": "pnpm validate:release && pnpm typecheck && pnpm lint && pnpm build",
+    "test:e2e": "python scripts/responsive_e2e.py",
+    "test:e2e:install": "python -m playwright install chromium",
+    "validate:environment": "node scripts/validate-environment.mjs",
+    "validate:release": "node scripts/validate-release-3.5.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.2",
+    "googleapis": "^173.0.0",
+    "next": "16.2.6",
+    "nitro": "3.0.260610-beta",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "fflate": "0.7.4",
+    "sharp": "0.34.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "@vitejs/plugin-rsc": "0.5.26",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "react-server-dom-webpack": "19.2.6",
+    "supabase": "^2.109.1",
+    "typescript": "5.9.3",
+    "vinext": "0.0.50",
+    "vite": "8.0.13"
+  },
+  "type": "module",
+  "packageManager": "pnpm@11.12.0"
+}

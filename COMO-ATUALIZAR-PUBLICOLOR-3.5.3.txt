@@ -1,0 +1,19 @@
+PUBLICOLOR PCP 3.5.3 - ATUALIZAÇÃO
+
+1. Faça backup do projeto atualmente publicado.
+2. Substitua os arquivos pelo conteúdo deste ZIP.
+3. Preserve o arquivo .env.local da instalação atual.
+4. Execute:
+
+   corepack enable
+   pnpm install --frozen-lockfile
+   pnpm validate
+
+5. Publique novamente na Vercel.
+6. Abra Configurações -> Integração com Google Drive.
+7. Caso a integração apareça desconectada, clique em Reconectar conta e autorize pcp.publicolor@gmail.com.
+8. Atualize o navegador com Ctrl + F5 para eliminar o cache antigo de miniaturas WebP.
+
+BANCO DE DADOS
+- Esta versão não exige novo SQL.
+- Permanecem válidos os SQLs cumulativos da versão 3.5.0 Revisado.

@@ -1,0 +1,15 @@
+PUBLICOLOR PCP 3.5.8 — LIMITE DE PDF
+
+ALTERAÇÃO
+- O importador de PDF agora aceita arquivos de até 200 MB.
+- O campo de PDF original no cadastro manual também aceita até 200 MB.
+- O envio ao Google Drive continua usando upload retomável e já suporta arquivos maiores.
+
+ATUALIZAÇÃO
+1. Substitua os arquivos pela versão deste ZIP.
+2. Execute: pnpm install --frozen-lockfile
+3. Execute: pnpm validate
+4. Publique na Vercel.
+5. Atualize o navegador com Ctrl + F5.
+
+Não é necessário executar SQL.

@@ -1,0 +1,41 @@
+{
+  "name": "Publicolor PCP",
+  "short_name": "Publicolor",
+  "description": "PCP da Publicolor com Kanban móvel, agenda, pedidos e dashboard operacional, compras, agenda, páginas independentes, integrações monitoradas e leitura offline controlada.",
+  "start_url": "/dashboard?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
+  "background_color": "#f4f1f5",
+  "theme_color": "#4f1765",
+  "orientation": "any",
+  "lang": "pt-BR",
+  "categories": [
+    "business",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/icons/publicolor-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/publicolor-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/publicolor-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "id": "/dashboard"
+}

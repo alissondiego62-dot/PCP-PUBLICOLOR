@@ -1,0 +1,29 @@
+PUBLICOLOR PCP 3.4.3 — RELATÓRIO DE VALIDAÇÃO
+
+IMPLEMENTAÇÃO
+- agrupamento por número-base da OP, setor e faixa de status;
+- pilha recolhida por padrão;
+- estado de expansão não persistido;
+- ordenação dos subpedidos pelo sufixo numérico;
+- cartões individuais preservados dentro da pilha;
+- resumo consolidado de prazo, atraso, pausa, responsável e comentários;
+- layout responsivo para desktop, tablet e celular.
+
+VALIDAÇÕES REALIZADAS
+- 103 arquivos TypeScript/TSX transpilados sem diagnóstico de sintaxe;
+- imports internos e relativos verificados sem caminhos ausentes;
+- 25 arquivos CSS com chaves balanceadas;
+- 4 arquivos JSON válidos;
+- lógica de agrupamento testada com OPs 1052-1, 1052-2 e 1052-3;
+- script de validação da release aprovado;
+- Service Worker atualizado para o cache 3.4.3;
+- pacote com 273 arquivos antes da compactação;
+- ZIP sem .env.local, .git, node_modules, .next ou dist.
+
+BANCO DE DADOS
+- nenhuma alteração necessária;
+- permanece válido o SQL cumulativo corrigido da versão 3.4.2.
+
+LIMITAÇÃO DO AMBIENTE
+- o build integral não foi executado porque as dependências não estão instaladas neste ambiente e o projeto exige Node.js 24.x;
+- execute pnpm validate antes do deploy.
